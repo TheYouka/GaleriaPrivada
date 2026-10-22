@@ -1,0 +1,17 @@
+# Finales de línea LF en el repositorio y en la copia de trabajo (Prettier usa LF),
+# también en Windows con core.autocrlf=true y al clonar en Linux.
+* text=auto eol=lf
+
+# Binarios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp3 binary
+*.mp4 binary
+*.webm binary
