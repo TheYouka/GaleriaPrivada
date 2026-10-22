@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+release/
+.cache/
+coverage/
+test-results/
+playwright-report/
+tests/.tmp/
+GaleriaData/
+resources/ffmpeg/*-x64/
+package-lock.json
+docs/
+.agents/

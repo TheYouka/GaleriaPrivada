@@ -1,0 +1,30 @@
+# Dependencias
+node_modules/
+
+# Salidas de build y empaquetado
+out/
+dist/
+release/
+.cache/
+*.tsbuildinfo
+
+# Binarios de ffmpeg descargados (Fase 2)
+resources/ffmpeg/*-x64/
+
+# Tests: cobertura, informes de Playwright y datos de prueba (bóvedas temporales, spike)
+coverage/
+test-results/
+playwright-report/
+tests/.tmp/
+GaleriaData/
+
+# Archivos de trabajo del flujo de agentes (se versiona solo el anexo de requisitos,
+# que DESIGN.md y PLAN.md citan como vinculante)
+.agents/*
+!.agents/tasks/
+.agents/tasks/*
+!.agents/tasks/requirements-addendum.md
+
+# Varios
+*.log
+.env*
