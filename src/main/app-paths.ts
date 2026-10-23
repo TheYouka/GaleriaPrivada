@@ -11,6 +11,8 @@ export interface AppPaths {
   userData: string;
   /** true si viene de GALERIA_DATA_DIR. */
   overridden: boolean;
+  /** true si GALERIA_DATA_DIR existe pero no es absoluta (se ignora y se registra un warn). */
+  overrideIgnored: boolean;
 }
 
 let current: AppPaths | null = null;
@@ -23,12 +25,18 @@ function absoluteEnv(name: string): string | undefined {
 export function resolveAppPaths(): AppPaths {
   // Override para Vitest y Playwright: userData es una carpeta hermana con sufijo, así dos raíces
   // de prueba de la misma carpeta padre no comparten userData ni el lock de instancia única.
-  // Si no es absoluta se ignora (F1: log.warn).
+  // Si no es absoluta se ignora (index.ts registra el warn cuando ya hay log).
   const override = absoluteEnv('GALERIA_DATA_DIR');
   if (override) {
     const dataRoot = resolve(override);
-    return { dataRoot, userData: `${dataRoot}.electron`, overridden: true };
+    return {
+      dataRoot,
+      userData: `${dataRoot}.electron`,
+      overridden: true,
+      overrideIgnored: false,
+    };
   }
+  const overrideIgnored = Boolean(process.env.GALERIA_DATA_DIR);
   const home = app.getPath('home');
   if (process.platform === 'win32') {
     const local = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
@@ -36,6 +44,7 @@ export function resolveAppPaths(): AppPaths {
       dataRoot: join(local, 'Galeria', 'GaleriaData'),
       userData: join(local, 'Galeria', 'electron'),
       overridden: false,
+      overrideIgnored,
     };
   }
   const configHome = absoluteEnv('XDG_CONFIG_HOME') ?? join(home, '.config');
@@ -44,6 +53,7 @@ export function resolveAppPaths(): AppPaths {
     dataRoot: join(dataHome, 'Galeria', 'GaleriaData'),
     userData: join(configHome, 'Galeria', 'electron'),
     overridden: false,
+    overrideIgnored,
   };
 }
 

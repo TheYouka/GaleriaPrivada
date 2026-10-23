@@ -1,0 +1,6 @@
+/*
+ * Fuentes empaquetadas (docs/DESIGN.md §15.12): solo @fontsource-variable (OFL-1.1), servidas desde
+ * app://bundle, sin CDN. F1: Inter (Clásico) y Nunito (Ondas); F6 añade Noto Sans, Fraunces y Caveat.
+ */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/nunito/wght.css';

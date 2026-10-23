@@ -1,8 +1,141 @@
-// Esquemas zod del IPC [H3-2]. Es el único sitio con esquemas del IPC: el preload y src/shared no
-// importan zod. El tipo obliga a declarar un esquema por cada canal de INVOKE_CHANNELS.
+// Esquemas zod del IPC [H3-2] con las reglas de docs/DESIGN.md §10.3. Es el único sitio con esquemas
+// del IPC: el preload y src/shared no importan zod. El tipo obliga a declarar un esquema por cada
+// canal de INVOKE_CHANNELS. Todos los objetos son estrictos (sin claves extra).
+//
+// Cadenas: text(min, max) normaliza a NFC, recorta y cuenta code points. Las rutas son la excepción
+// [H3-3]: rawPath() NO normaliza ni recorta (una ruta con NFD o con un espacio final es otro archivo,
+// y se borra el original importado: normalizarla podría borrar otro archivo). La usa import:paths
+// en F2.
+import { isAbsolute } from 'node:path';
 import { z } from 'zod';
+import {
+  AUTO_LOCK_MINUTES,
+  AVATAR_TOKEN_PATTERN,
+  BUILTIN_AVATAR_IDS,
+  ID_PATTERN,
+  PASSWORD_MAX_BYTES,
+  PASSWORD_MIN_BYTES,
+  PATH_MAX_UTF16,
+  PROFILE_NAME_MAX,
+  PROFILE_NAME_MIN,
+} from '@shared/constants';
 import type { InvokeChannel, ReqOf } from '@shared/ipc-contract';
+import { AVAILABLE_THEME_IDS, THEME_IDS, type ThemeId } from '@shared/themes';
+import type { AvatarInput } from '@shared/types';
+import { GALLERY_SORT_SCHEMA, PRESENTATION_PLAIN_SCHEMA } from '../settings/settings-store';
+
+// ── Ayudantes ──────────────────────────────────────────────────────────────────────────────────
+
+const CONTROL = /\p{Cc}/u;
+
+/** NFC + trim; entre `min` y `max` code points y sin caracteres de control (\p{Cc}). */
+export function text(min: number, max: number) {
+  return z
+    .string()
+    .transform((s) => s.normalize('NFC').trim())
+    .refine(
+      (s) => {
+        const n = [...s].length;
+        return n >= min && n <= max;
+      },
+      { message: 'length' },
+    )
+    .refine((s) => !CONTROL.test(s), { message: 'control' });
+}
+
+/**
+ * [H3-3] Ruta tal cual la envió el usuario: sin normalizar ni recortar. No vacía, ≤ 32 767 unidades
+ * UTF-16, absoluta (path.isAbsolute de la plataforma) y sin NUL.
+ */
+export function rawPath() {
+  return z
+    .string()
+    .min(1)
+    .max(PATH_MAX_UTF16)
+    .refine((p) => !p.includes('\0'), { message: 'nul' })
+    .refine((p) => isAbsolute(p), { message: 'absolute' });
+}
+
+export const idSchema = z.string().regex(ID_PATTERN);
+
+/** Contraseña: bytes UTF-8 de NFC(texto), 8–1024 bytes (la UI exige además ≥ 8 code points). */
+export const passwordSchema = z
+  .instanceof(Uint8Array)
+  .refine((b) => b.length >= PASSWORD_MIN_BYTES && b.length <= PASSWORD_MAX_BYTES, {
+    message: 'length',
+  });
+
+export const profileNameSchema = text(PROFILE_NAME_MIN, PROFILE_NAME_MAX);
+
+export const avatarInputSchema: z.ZodType<AvatarInput> = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('builtin'), id: z.enum(BUILTIN_AVATAR_IDS) }),
+  z.strictObject({ type: z.literal('custom'), token: z.string().regex(AVATAR_TOKEN_PATTERN) }),
+]);
+
+/** Solo los temas implementados en esta versión (F1: `fotos` y `ps3`). */
+export const themeIdSchema: z.ZodType<ThemeId> = z
+  .enum(THEME_IDS)
+  .refine((id) => AVAILABLE_THEME_IDS.includes(id), { message: 'unavailable' });
+
+const colorSchemePref = z.enum(['system', 'light', 'dark']);
+
+// ── Canales ────────────────────────────────────────────────────────────────────────────────────
 
 export const SCHEMAS: { [C in InvokeChannel]: z.ZodType<ReqOf<C>> } = {
   'app:getInfo': z.undefined(),
+
+  'window:minimize': z.undefined(),
+  'window:toggleMaximize': z.undefined(),
+  'window:close': z.undefined(),
+  'window:setFullScreen': z.strictObject({ on: z.boolean() }),
+  'window:getState': z.undefined(),
+
+  'settings:get': z.undefined(),
+  'settings:set': z.strictObject({
+    pickerThemeId: themeIdSchema.optional(),
+    colorScheme: colorSchemePref.optional(),
+  }),
+
+  'profiles:list': z.undefined(),
+  'profiles:pickAvatarPhoto': z.undefined(),
+  'profiles:create': z.strictObject({
+    name: profileNameSchema,
+    avatar: avatarInputSchema,
+    password: passwordSchema,
+    acknowledgeNoRecovery: z.literal(true),
+  }),
+  'profiles:update': z.strictObject({
+    profileId: idSchema,
+    password: passwordSchema,
+    name: profileNameSchema.optional(),
+    avatar: avatarInputSchema.optional(),
+  }),
+  'profiles:changePassword': z.strictObject({
+    profileId: idSchema,
+    currentPassword: passwordSchema,
+    newPassword: passwordSchema,
+  }),
+  // confirmName se compara por pliegue de mayúsculas y diacríticos en profile-service.
+  'profiles:delete': z.strictObject({
+    profileId: idSchema,
+    password: passwordSchema,
+    confirmName: profileNameSchema,
+  }),
+
+  'session:unlock': z.strictObject({ profileId: idSchema, password: passwordSchema }),
+  'session:lock': z.undefined(),
+  'session:getState': z.undefined(),
+  'session:activity': z.undefined(),
+  'session:setPlayback': z.strictObject({ active: z.boolean() }),
+
+  'prefs:get': z.undefined(),
+  'prefs:set': z.strictObject({
+    themeId: themeIdSchema.nullable().optional(),
+    colorScheme: colorSchemePref.nullable().optional(),
+    autoLockMinutes: z.literal([...AUTO_LOCK_MINUTES]).optional(),
+    contentProtection: z.boolean().optional(),
+    gridSize: z.enum(['small', 'medium', 'large']).optional(),
+    gallerySort: GALLERY_SORT_SCHEMA.optional(),
+    presentationDefaults: PRESENTATION_PLAIN_SCHEMA.optional(),
+  }),
 };

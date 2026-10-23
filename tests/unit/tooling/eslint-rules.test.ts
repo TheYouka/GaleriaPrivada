@@ -219,9 +219,12 @@ const cases: Case[] = [
 
 let eslint: ESLint;
 
-beforeAll(() => {
+// La primera llamada carga eslint.config.mjs y los plugins; con toda la suite en paralelo puede
+// pasar de los 5 s por test, así que se hace aquí con más margen.
+beforeAll(async () => {
   eslint = new ESLint({ cwd: ROOT });
-});
+  await eslint.lintText('export {};', { filePath: join(ROOT, 'src/main/warmup.ts') });
+}, 60_000);
 
 async function rulesFor(file: string, code: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath: join(ROOT, file) });

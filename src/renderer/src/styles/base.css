@@ -1,9 +1,75 @@
-@import 'tailwindcss';
+/* Tailwind v4 por partes: el preflight es una copia sin las pilas de fuentes de sistema. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import './preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
 
-/* Tokens mínimos del scaffold. F1 los sustituye por los tokens --g-* de los temas (§15). */
+/*
+ * Tailwind v4 sobre los tokens --g-* de los temas (docs/DESIGN.md §15.3). `inline` hace que las
+ * clases (bg-surface, rounded-tile, …) usen var(--g-…) en el propio elemento, así que resuelven en
+ * tiempo de ejecución con el data-theme/data-scheme más cercano (también en ThemePreview).
+ */
+@theme {
+  /* Sin las pilas de fuentes de sistema por defecto: solo las fuentes OFL empaquetadas. */
+  --font-*: initial;
+}
+
 @theme inline {
-  --color-bg: #1b1b1f;
-  --color-text: #f2f2f2;
+  --color-bg: var(--g-bg);
+  --color-bg-elevated: var(--g-bg-elevated);
+  --color-surface: var(--g-surface);
+  --color-surface-2: var(--g-surface-2);
+  --color-surface-hover: var(--g-surface-hover);
+  --color-surface-pressed: var(--g-surface-pressed);
+  --color-surface-alpha: var(--g-surface-alpha);
+  --color-border: var(--g-border);
+  --color-border-strong: var(--g-border-strong);
+  --color-text: var(--g-text);
+  --color-text-muted: var(--g-text-muted);
+  --color-on-accent: var(--g-text-on-accent);
+  --color-accent: var(--g-accent);
+  --color-accent-hover: var(--g-accent-hover);
+  --color-accent-pressed: var(--g-accent-pressed);
+  --color-accent-muted: var(--g-accent-muted);
+  --color-focus-ring: var(--g-focus-ring);
+  --color-selection: var(--g-selection);
+  --color-selection-border: var(--g-selection-border);
+  --color-danger: var(--g-danger);
+  --color-danger-text: var(--g-danger-text);
+  --color-warning: var(--g-warning);
+  --color-success: var(--g-success);
+  --color-scrim: var(--g-scrim);
+  --color-tile-placeholder: var(--g-tile-placeholder);
+
+  --font-sans: var(--g-font-sans);
+  --font-display: var(--g-font-display);
+  --font-hand: var(--g-font-hand);
+  --font-mono: var(--g-font-sans);
+  /* Preflight: sin las pilas de sistema (con nombres de fuentes propietarias) como respaldo. */
+  --default-font-family: var(--g-font-sans);
+  --default-mono-font-family: var(--g-font-sans);
+
+  --text-xs: var(--g-text-xs);
+  --text-sm: var(--g-text-sm);
+  --text-base: var(--g-text-base);
+  --text-lg: var(--g-text-lg);
+  --text-xl: var(--g-text-xl);
+  --text-2xl: var(--g-text-2xl);
+  --text-3xl: var(--g-text-3xl);
+
+  --radius-sm: var(--g-radius-sm);
+  --radius-md: var(--g-radius-md);
+  --radius-lg: var(--g-radius-lg);
+  --radius-tile: var(--g-radius-tile);
+  --radius-avatar: var(--g-radius-avatar);
+
+  --shadow-sm: var(--g-shadow-sm);
+  --shadow-md: var(--g-shadow-md);
+  --shadow-lg: var(--g-shadow-lg);
+
+  --ease-standard: var(--g-ease-standard);
+  --ease-emphasized: var(--g-ease-emphasized);
+  --ease-decelerate: var(--g-ease-decelerate);
 }
 
 @layer base {
@@ -14,6 +80,50 @@
   }
 
   body {
-    @apply bg-bg text-text antialiased;
+    margin: 0;
+    overflow: hidden;
+    background: var(--g-bg, #1b1b1f);
+    color: var(--g-text, #f2f2f2);
+    font-family: var(--g-font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Foco visible en todos los temas (§14.1): anillo de --g-focus-ring de 2 px con 2 px de
+   * separación. Los controles que lo sustituyen (avatares del selector) lo dibujan ellos.
+   */
+  :focus-visible {
+    outline: 2px solid var(--g-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /*
+   * El <h1 tabIndex={-1}> de cada pantalla recibe el foco para que el lector de pantalla la anuncie
+   * (§14.1), pero no es un control (no está en el orden de Tab): sin anillo.
+   */
+  h1[tabindex='-1']:focus {
+    outline: none;
+  }
+}
+
+/* Velo opaco del bloqueo (§13.3, paso 1): encima de todo, sin animación. */
+.galeria-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: var(--g-bg, #1b1b1f);
+}
+
+/* Cambio de tema en vivo (§15.8): fundido corto que cubre también el cambio de shell. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

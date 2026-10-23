@@ -2,6 +2,7 @@
 // Este es el único archivo con webRequest.onBeforeRequest: en Electron, un segundo listener en la
 // misma sesión sustituye al primero sin avisar.
 import { app, type ProxyConfig, type Session } from 'electron';
+import { log } from '../log';
 import { originOf } from './navigation-guard';
 
 export interface BlockedCounters {
@@ -25,7 +26,7 @@ function countBlocked(scheme: string): void {
     ? (scheme as keyof BlockedCounters)
     : 'other';
   counters[key] += 1;
-  // F1: log.warn('net.blocked', { scheme }) cuando exista src/main/log.ts.
+  log.warn('net.blocked', { scheme: key }); // el esquema, nunca la URL (§5.4)
 }
 
 /**
@@ -66,7 +67,8 @@ function install(ses: Session, { devUrl }: SessionGuardOptions): Promise<void> {
   });
 
   ses.on('will-download', (event) => {
-    event.preventDefault(); // F1: log.warn('download.blocked')
+    event.preventDefault();
+    log.warn('download.blocked');
   });
 
   ses.setPermissionRequestHandler((_contents, permission, callback) => {

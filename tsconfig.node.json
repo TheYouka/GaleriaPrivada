@@ -11,7 +11,10 @@
     "types": ["node"],
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@renderer/*": ["./src/renderer/src/*"]
+      "@renderer/*": ["./src/renderer/src/*"],
+      "better-sqlite3-multiple-ciphers": [
+        "./node_modules/better-sqlite3-multiple-ciphers/index.d.ts"
+      ]
     }
   },
   "include": [
@@ -20,5 +23,6 @@
     "src/shared/**/*.ts",
     "tests/**/*.ts",
     "*.config.ts"
-  ]
+  ],
+  "exclude": ["tests/unit/renderer/**"]
 }

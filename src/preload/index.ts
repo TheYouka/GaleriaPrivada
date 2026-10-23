@@ -8,13 +8,11 @@ import {
   type GaleriaApi,
   type PayloadOf,
 } from '@shared/ipc-contract';
-import type { Id, ThemeId } from '@shared/types';
+import { DEFAULT_THEME_ID, isThemeId } from '@shared/themes';
+import type { Id } from '@shared/types';
 
 const invokeAllowlist: ReadonlySet<string> = new Set(INVOKE_CHANNELS);
 const eventAllowlist: ReadonlySet<string> = new Set(EVENT_CHANNELS);
-
-// F1 mueve el catálogo a src/shared/themes.ts.
-const THEME_IDS: readonly ThemeId[] = ['fotos', 'xbox', 'ps3', 'macos', 'album'];
 
 function readArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -25,7 +23,7 @@ function readInitialTheme(): GaleriaApi['initialTheme'] {
   const theme = readArg('galeria-theme');
   const scheme = readArg('galeria-scheme');
   return Object.freeze({
-    themeId: THEME_IDS.find((t) => t === theme) ?? 'fotos',
+    themeId: isThemeId(theme) ? theme : DEFAULT_THEME_ID,
     scheme: scheme === 'light' ? 'light' : 'dark',
   });
 }
@@ -56,3 +54,14 @@ const api: GaleriaApi = {
 };
 
 contextBridge.exposeInMainWorld('galeria', api);
+
+// §15.4: data-theme y data-scheme en <html> desde el principio, para que no haya un destello con el
+// tema equivocado. No pisa lo que ya haya puesto el renderer (ThemeProvider).
+function applyInitialTheme(): void {
+  const html = document.documentElement;
+  if (!html) return;
+  if (!html.dataset.theme) html.dataset.theme = api.initialTheme.themeId;
+  if (!html.dataset.scheme) html.dataset.scheme = api.initialTheme.scheme;
+}
+applyInitialTheme();
+document.addEventListener('DOMContentLoaded', applyInitialTheme, { once: true });

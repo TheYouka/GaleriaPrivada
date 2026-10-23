@@ -1,0 +1,38 @@
+/*
+ * Estilos estructurales propios de cada tema (docs/DESIGN.md §15.4). F1: `fotos` (y lo mínimo del
+ * stub de `ps3`); F6 añade el resto con selectores [data-theme="…"].
+ */
+
+/* Mica: degradado radial estático del acento al 15 % (los extremos del test de contraste). */
+.g-mica-glow {
+  background: radial-gradient(
+    ellipse 90% 70% at 15% 0%,
+    color-mix(in srgb, var(--g-accent) 15%, transparent),
+    transparent 70%
+  );
+}
+
+/* Clásico: indicador de la entrada activa del panel de navegación (píldora de acento). */
+[data-theme='fotos'] .g-nav-item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--g-accent);
+  transform: translateY(-50%);
+}
+
+/* Botón Cerrar de la barra de título: rojo propio con texto blanco (contraste ≥ 4,5:1). */
+.g-titlebar-close:hover,
+.g-titlebar-close:active {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+/* Ondas: el panel de contenido deja ver las ondas; el texto va sobre `surface-alpha`. */
+[data-theme='ps3'] [data-titlebar] {
+  color: var(--g-text);
+}
