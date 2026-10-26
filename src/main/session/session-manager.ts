@@ -154,6 +154,11 @@ export interface SessionDeps {
   testAutoLockMs?: number;
   /** Solo E2E sin empaquetar (GALERIA_E2E=1): expone globalThis.__galeriaLastZeroizeMs. */
   exposeTestHooks?: boolean;
+  /**
+   * Reproducción activa (session:setPlayback): index.ts lo implementa con `powerSaveBlocker`
+   * (`prevent-display-sleep`). Se llama solo cuando cambia y con `false` al bloquear.
+   */
+  setDisplaySleepBlocked?: (on: boolean) => void;
 }
 
 type Phase = SessionState['state'];
@@ -321,11 +326,29 @@ export class SessionManager {
     if (this.phase === 'unlocked') this.autoLock.activity();
   }
 
-  /** session:setPlayback (D12): una presentación o un vídeo pausan el auto-bloqueo. */
+  /**
+   * session:setPlayback (D12): una presentación o un vídeo pausan el auto-bloqueo y evitan que la
+   * pantalla se apague (`prevent-display-sleep`). Ambos se sueltan al pausar, terminar, cerrar y
+   * bloquear (`releasePlayback`).
+   */
   setPlayback(active: boolean): void {
     if (this.phase !== 'unlocked') return;
     if (active) this.autoLock.pause('playback');
     else this.autoLock.resume('playback');
+    this.blockDisplaySleep(active);
+  }
+
+  private displaySleepBlocked = false;
+
+  private blockDisplaySleep(on: boolean): void {
+    if (this.displaySleepBlocked === on) return;
+    this.displaySleepBlocked = on;
+    safely(() => this.deps.setDisplaySleepBlocked?.(on));
+  }
+
+  /** El bloqueo (y deshacer un desbloqueo) suelta el bloqueador de suspensión de pantalla. */
+  private releasePlayback(): void {
+    this.blockDisplaySleep(false);
   }
 
   /** prefs:set: nuevo tiempo de inactividad y protección de contenido (D15) al momento. */
@@ -483,6 +506,7 @@ export class SessionManager {
   private undoUnlock(): void {
     this.stopWatcher();
     this.autoLock.stop();
+    this.releasePlayback();
     this.jobs?.abortAll('error');
     this.previousJobs = this.jobs ?? this.previousJobs;
     this.jobs = null;
@@ -606,6 +630,7 @@ export class SessionManager {
     safely(() => this.deps.ui.sendLocking(reason));
     if (reason === 'suspend' || reason === 'os-lock') safely(() => this.deps.ui.hide());
     this.autoLock.stop();
+    this.releasePlayback();
     this.stopWatcher();
 
     // 2. Abortar (síncrono): los manejadores de 'abort' de cada trabajo destruyen sus claves.

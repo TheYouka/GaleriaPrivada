@@ -3,7 +3,7 @@
 // Ctrl+Shift+I, Ctrl+F, F5, F1 y Ctrl+,) y el aviso de actividad para el bloqueo por inactividad
 // (session:activity, como mucho cada 10 s). Aquí se montan también lo que debe seguir visible en
 // cualquier pantalla: el panel de importación, la capa de soltar archivos, los diálogos de renombrar y
-// eliminar y el traslado de la bóveda.
+// eliminar, el visor de fotos y vídeos (§16.1) y el traslado de la bóveda.
 import { useEffect } from 'react';
 import { installActivityReporter } from '../lib/activity';
 import { announce } from '../lib/announce';
@@ -26,6 +26,7 @@ import { ImportProgress } from './gallery/ImportProgress';
 import { RenameDialog } from './gallery/RenameDialog';
 import { COMING_SOON } from './gallery/SelectionBar';
 import { HelpScreen } from './help/HelpScreen';
+import { Viewer } from './viewer/Viewer';
 import { PlaceholderScreen } from './PlaceholderScreen';
 import { RelocateDialog } from './settings/RelocateDialog';
 import { SettingsScreen } from './settings/SettingsScreen';
@@ -151,6 +152,7 @@ export function UnlockedApp() {
       <ImportDropZone />
       <RenameDialog />
       <DeleteDialog />
+      <Viewer />
       {/* Traslado de la bóveda (§8.7): progreso no descartable, visible en cualquier pantalla. */}
       <RelocateDialog />
     </>

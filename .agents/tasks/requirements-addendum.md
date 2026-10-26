@@ -166,3 +166,15 @@ The user has no administrator rights on the Windows machine, so WSL2 is not avai
 - **D18 is fully CONFIRMED.** The inactivity timer stays paused during imports (except while awaiting confirmation) and during merges. Keep `IMPORT_PAUSES_AUTOLOCK = true`.
 - **R6 / task 2.15 is CLOSED WITHOUT IMPLEMENTATION.** The user accepts the occasional ~0.1 s main-thread stall during large imports. Do NOT move import crypto/hashing to a `utilityProcess`. The DESIGN §3 invariant ("no utilityProcess") stays.
 - **Phase 2 was tested manually by the user and works.**
+
+## 7. User decisions after Phase 3 (binding)
+
+- **D16 is CONFIRMED as option (a).** The presentation has a "silence videos" control plus a separate "Música de fondo" toggle next to it. Together they allow all four combinations:
+  - only video audio (the default);
+  - only background music;
+  - both;
+  - silence everything.
+- **Phase 3 is accepted and committed.** These open LOW items stay as they are unless the user asks:
+  - one click opens the viewer; selection uses Ctrl/Shift/checkbox/Space;
+  - a damaged video shows the generic "No se puede reproducir este vídeo" message;
+  - Esc during an edit save closes the editor (the recommended fix is to ignore Esc while saving; pending).

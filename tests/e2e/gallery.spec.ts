@@ -231,7 +231,8 @@ test('el tamaño de las miniaturas cambia las columnas', async () => {
 test('selección con clic, Ctrl, Shift y Ctrl+A; Esc la limpia', async () => {
   const cells = gridCells(page);
   const selected = page.getByRole('gridcell', { selected: true });
-  await cells.nth(2).click();
+  // Un clic abre el visor (§14.6): la selección se hace con Ctrl+clic, la casilla o Espacio.
+  await cells.nth(2).click({ modifiers: ['Control'] });
   await expect(selected).toHaveCount(1);
   await cells.nth(4).click({ modifiers: ['Control'] });
   await expect(selected).toHaveCount(2);
@@ -246,7 +247,7 @@ test('selección con clic, Ctrl, Shift y Ctrl+A; Esc la limpia', async () => {
   await expect(cells.nth(7)).toHaveAttribute('aria-selected', 'true');
   await expect(cells.nth(1)).toHaveAttribute('aria-selected', 'false');
 
-  await cells.nth(0).click();
+  await cells.nth(0).focus();
   await page.keyboard.press('Control+A');
   await expect(selected).toHaveCount(8);
   await expect(page.getByText('8 seleccionados', { exact: true })).toBeVisible();
@@ -258,7 +259,7 @@ test('selección con clic, Ctrl, Shift y Ctrl+A; Esc la limpia', async () => {
 test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () => {
   const cells = gridCells(page);
   const selected = page.getByRole('gridcell', { selected: true });
-  await cells.nth(0).click();
+  await cells.nth(0).click({ modifiers: ['Control'] });
   await page.keyboard.press('Escape');
   await expect(selected).toHaveCount(0);
   await expect(cells.nth(0)).toBeFocused();
@@ -280,7 +281,7 @@ test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () =>
   await page.keyboard.press('Escape');
 
   // Presentación y Vídeo dual no están disponibles todavía: deshabilitados con su tooltip.
-  await cells.nth(0).click();
+  await cells.nth(0).click({ modifiers: ['Control'] });
   const presentation = page.getByRole('button', { name: 'Presentación' });
   await expect(presentation).toHaveAttribute('aria-disabled', 'true');
   await presentation.focus();
@@ -289,13 +290,13 @@ test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () =>
     page.getByRole('region', { name: 'Selección' }).getByRole('button', { name: 'Vídeo dual' }),
   ).toHaveAttribute('aria-disabled', 'true');
   await page.keyboard.press('Escape');
-  await cells.nth(0).click();
+  await cells.nth(0).click({ modifiers: ['Control'] });
   await page.keyboard.press('Escape');
 });
 
 test('renombrar con F2: el diálogo valida y guarda con Enter', async () => {
   const zorro = page.getByRole('gridcell', { name: 'Zorro', exact: true });
-  await zorro.click();
+  await zorro.focus();
   await page.keyboard.press('F2');
   const dialog = page.getByRole('dialog', { name: 'Renombrar' });
   await expect(dialog).toBeVisible();
@@ -320,7 +321,9 @@ test('renombrar con F2: el diálogo valida y guarda con Enter', async () => {
   await expectItemCount(page, 8);
 
   // Con la barra de selección también, y solo con un elemento.
-  await page.getByRole('gridcell', { name: 'Zorro rojo', exact: true }).click();
+  await page
+    .getByRole('gridcell', { name: 'Zorro rojo', exact: true })
+    .click({ modifiers: ['Control'] });
   await page.getByRole('button', { name: 'Renombrar' }).click();
   await dialog.getByLabel('Nombre').fill('Zorro');
   await dialog.getByRole('button', { name: 'Guardar' }).click();
@@ -340,7 +343,7 @@ test('borrar con Supr: confirmación con el foco en "Cancelar", permanente, y lo
   expect(count('thumbs')).toBe(8);
 
   const cells = gridCells(page);
-  await cells.nth(2).click();
+  await cells.nth(2).click({ modifiers: ['Control'] });
   await cells.nth(3).click({ modifiers: ['Control'] });
   await page.keyboard.press('Delete');
   const dialog = page.getByRole('alertdialog', { name: '¿Eliminar 2 elementos?' });

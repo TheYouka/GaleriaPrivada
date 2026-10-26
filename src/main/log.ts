@@ -106,6 +106,9 @@ export const LOG_EVENTS = [
   'reconcile.thumb-failed',
   'reconcile.sweep-failed',
   'reconcile.orphans-erased',
+  // Edición y regeneración de miniaturas (§16.5)
+  'edit.saved',
+  'edit.failed',
   // Traslado de la bóveda y disco ausente (§8.7)
   'relocate.started',
   'relocate.done',

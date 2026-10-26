@@ -17,6 +17,11 @@ export function thumbUrl(mediaId: Id, rev: number): string {
   return `vault://thumb/${mediaId}?rev=${rev}`;
 }
 
+/** Original de un medio (descifrado al vuelo, con Range): la foto en el visor y el vídeo (§11.1). */
+export function mediaUrl(mediaId: Id): string {
+  if (!ID_PATTERN.test(mediaId)) throw new RangeError('mediaId inválido');
+  return `vault://media/${mediaId}`;
+}
 /** Foto de avatar elegida y aún no guardada (token de profiles:pickAvatarPhoto). */
 export function pendingAvatarUrl(token: string): string {
   if (!AVATAR_TOKEN_PATTERN.test(token)) throw new RangeError('token inválido');

@@ -16,11 +16,13 @@ export interface MenuProps {
   options: readonly MenuOption[];
   value: string;
   onValueChange(value: string): void;
+  /** Se abre o se cierra (el reproductor mantiene visibles sus controles mientras está abierto). */
+  onOpenChange?(open: boolean): void;
 }
 
-export function Menu({ trigger, label, options, value, onValueChange }: MenuProps) {
+export function Menu({ trigger, label, options, value, onValueChange, onOpenChange }: MenuProps) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

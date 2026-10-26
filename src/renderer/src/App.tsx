@@ -8,6 +8,7 @@ import { LiveRegion } from './components/LiveRegion';
 import { Toaster } from './components/Toast';
 import { ProfilesFlow } from './screens/profiles/ProfilesFlow';
 import { UnlockedApp } from './screens/UnlockedApp';
+import { usePlayerStore } from './stores/player-store';
 import {
   bootstrapSession,
   lockSession,
@@ -22,10 +23,11 @@ import { useTheme } from './themes/use-theme';
 function Frame() {
   const status = useSessionStore((s) => s.status);
   const { def } = useTheme();
+  const videoPlaying = usePlayerStore((s) => s.playing);
   const titlebar = def.titlebar === 'xmb' ? 'xmb' : 'fluent';
   return (
     <div className="grid h-full grid-rows-[2rem_minmax(0,1fr)] font-sans text-text">
-      <BackgroundHost kind={def.background} />
+      <BackgroundHost kind={def.background} videoPlaying={videoPlaying} />
       <div className="relative z-10 row-start-2 min-h-0">
         {status === 'unlocked' ? <UnlockedApp /> : status === 'locked' ? <ProfilesFlow /> : null}
       </div>

@@ -3,8 +3,9 @@
 // una carpeta vacía propia vigilada con fs.watch (con control positivo: un archivo de 1 MiB creado
 // y borrado se ve): miniatura de un JPEG de 8000×6000 con orientación 6, de un PNG entrelazado de
 // 16 bits de 6000×6000, de un GIF animado de 40 fotogramas de 2000×2000 y de un AVIF de 6000×4000,
-// y una foto de avatar. La carpeta sigue vacía y el vigilante no ve ninguna entrada. F3 añade
-// edits-render.
+// la misma imagen con ediciones (edits-render, F3: giro + volteo + recorte con el PNG intermedio en
+// memoria, y sin ediciones), y una foto de avatar. La carpeta sigue vacía y el vigilante no ve
+// ninguna entrada.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -109,7 +110,7 @@ describe('no-temp-leak (proceso hijo con TMP/TEMP/TMPDIR vigilados)', () => {
     expect(await meta(BIG.avif)).toMatchObject({ width: 6000, height: 4000, format: 'heif' });
   });
 
-  it('miniaturas y avatar: la carpeta temporal sigue vacía y el vigilante no ve nada', async () => {
+  it('miniaturas, edits-render y avatar: la carpeta temporal sigue vacía y el vigilante no ve nada', async () => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TMP: watchDir,
@@ -138,6 +139,9 @@ describe('no-temp-leak (proceso hijo con TMP/TEMP/TMPDIR vigilados)', () => {
     expect(report.controlSeen).toBe(true); // control positivo
     expect(report.thumbBytes).toHaveLength(4);
     expect(report.thumbBytes.every((n) => n > 0)).toBe(true);
+    // edits-render: 3 estados (dos con las dos pasadas del plan B y la identidad) por imagen.
+    expect(report.editBytes).toHaveLength(4 * 3);
+    expect(report.editBytes.every((n) => n > 0)).toBe(true);
     expect(report.avatarBytes).toBeGreaterThan(0);
     expect(report.seen).toEqual([]);
     expect(report.entries).toEqual([]);

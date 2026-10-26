@@ -20,6 +20,8 @@ export function registerSessionHandlers({ session }: SessionHandlerDeps): void {
   handle('session:activity', { requiresUnlock: true }, () => {
     session.activity();
   });
+  // Pausa 'playback' del auto-bloqueo y powerSaveBlocker (prevent-display-sleep) mientras suena un
+  // vídeo (3.6); SessionManager los suelta al pausar, terminar, cerrar y bloquear.
   handle('session:setPlayback', { requiresUnlock: true }, ({ active }) => {
     session.setPlayback(active);
   });

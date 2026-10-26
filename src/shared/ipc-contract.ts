@@ -8,6 +8,7 @@ import type { Result } from './errors';
 import type {
   AppInfo,
   AvatarInput,
+  EditOp,
   GlobalSettings,
   Id,
   ImportConfirmNeeded,
@@ -66,6 +67,7 @@ export const INVOKE_CHANNELS = [
   'vault:relocate',
   'vault:relocateCancel',
   'vault:locate',
+  'edits:save',
 ] as const;
 
 /**
@@ -188,6 +190,20 @@ interface InvokeMap {
    * la ruta configurada (la que ya está en claro en profiles.json).
    */
   'vault:locate': { req: { profileId: Id }; res: ProfileSummary | null };
+
+  /**
+   * U. Edición no destructiva de una foto (§16.5): sustituye la lista completa de operaciones
+   * (`[]` = revertir; ≤ 64, el editor colapsa antes a la forma canónica, §16.4) y regenera la
+   * miniatura. Devuelve las operaciones guardadas y el `thumbRev` nuevo (vault://thumb/<id>?rev=).
+   * Las operaciones actuales llegan en `media:get` (`MediaDetail.edits`; el EditState sale de
+   * foldEdits, src/shared/edits.ts). VALIDATION con un vídeo; NOT_FOUND si no hay fila `ready`;
+   * BUSY con otra edición del mismo medio o durante un traslado; INTEGRITY si el original no
+   * descifra; INTERNAL si sharp falla; DISK_FULL; IO.
+   */
+  'edits:save': {
+    req: { mediaId: Id; ops: EditOp[] };
+    res: { edits: EditOp[]; thumbRev: number };
+  };
 }
 
 /** Payload de cada evento (main → renderer, solo a la ventana actual). */

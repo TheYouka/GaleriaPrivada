@@ -96,6 +96,23 @@ async function pngBuffer(): Promise<Buffer> {
     .toBuffer();
 }
 
+function addEdits(h: ImportHarness, id: string, ops: string[]): void {
+  const insert = h
+    .db()
+    .prepare('INSERT INTO media_edits (media_id, seq, op_json, created_at) VALUES (?, ?, ?, 1)');
+  ops.forEach((op, seq) => insert.run(id, seq, op));
+}
+
+/** Dimensiones del WebP de una miniatura cifrada. */
+async function thumbSize(h: ImportHarness, thumbId: string) {
+  const keys = h.session.getKeyRing(h.session.epoch);
+  const reader = await storeOf(h.session).open(thumbId, KIND_THUMB, keys.kWrap);
+  const webp = await reader.readAll();
+  await reader.close();
+  const meta = await (await getSharp())(webp).metadata();
+  return { width: meta.width, height: meta.height };
+}
+
 describe('punto 1: filas pending', () => {
   it('con el objeto final → ready', async () => {
     const h = await harness();
@@ -216,6 +233,33 @@ describe('punto 2: sustituciones a medias (import.replace.*)', () => {
     expect(existsSync(store.objectPath(old.id))).toBe(false);
     expect(existsSync(store.thumbPath(old.thumbId))).toBe(false);
     expect(existsSync(store.objectPath(fresh))).toBe(true);
+  });
+
+  it('F3: si B copia ediciones, la miniatura de la fila nueva se rehace con ellas en segundo plano', async () => {
+    const h = await harness();
+    const old = await addReadyMedia(h.session);
+    addEdits(h, old.id, ['{"t":"rotate","q":1}']);
+    const hmac = randomBytes(32);
+    h.db().prepare('UPDATE media SET content_hmac = ? WHERE id = ?').run(hmac, old.id);
+    const fresh = newId();
+    const freshThumb = newId();
+    await writeObject(h.session, fresh, KIND_MEDIA, await pngBuffer()); // 64×48
+    await writeObject(h.session, freshThumb, KIND_THUMB, randomBytes(200)); // sin las ediciones
+    insertReplacing(
+      h.db(),
+      mediaRow({ id: fresh, thumbId: freshThumb, contentHmac: hmac }),
+      null,
+      old.id,
+    );
+    const r = reconciler(h, { background: true, sweepIntervalMs: 0 });
+    const report = await r.run(ctxOf(h));
+    expect(report.editedReplacements).toEqual([fresh]);
+    await r.backgroundIdle();
+    const row = rowOf(h, fresh);
+    expect(row?.thumb_rev).toBe(1);
+    expect(row?.thumb_id).not.toBe(freshThumb);
+    expect(existsSync(storeOf(h.session).thumbPath(freshThumb))).toBe(false);
+    expect(await thumbSize(h, row?.thumb_id as string)).toEqual({ width: 48, height: 64 });
   });
 
   it('sin la fila nueva: la antigua recupera su HMAC (desde el hex en minúsculas) y se borra la clave', async () => {
@@ -340,6 +384,21 @@ describe('punto 3: miniaturas ausentes [H3-7]', () => {
     await reader.close();
     expect(webp.subarray(8, 12).toString('latin1')).toBe('WEBP');
     expect(changed).toEqual([{ reason: 'edit', ids: [id] }]);
+  });
+
+  it('F3: la miniatura regenerada de una foto editada aplica sus ediciones guardadas (§16.5)', async () => {
+    const h = await harness();
+    const id = newId();
+    await writeObject(h.session, id, KIND_MEDIA, await pngBuffer()); // 64×48
+    insertRow(h.db(), { id, thumbId: newId(), width: 64, height: 48 }, { ready: true });
+    addEdits(h, id, ['{"t":"rotate","q":1}', '{"t":"crop","x":0,"y":0,"w":1,"h":0.5}']);
+    const r = reconciler(h, { background: true, sweepIntervalMs: 0 });
+    expect((await r.run(ctxOf(h))).missingThumbs).toEqual([id]);
+    await r.backgroundIdle();
+    const row = rowOf(h, id);
+    expect(row?.thumb_rev).toBe(1);
+    // 64×48 girada → 48×64, mitad de arriba → 48×32.
+    expect(await thumbSize(h, row?.thumb_id as string)).toEqual({ width: 48, height: 32 });
   });
 });
 

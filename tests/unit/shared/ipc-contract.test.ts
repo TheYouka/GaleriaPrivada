@@ -16,7 +16,7 @@ import {
   BUILTIN_AVATAR_IDS,
   IMPORT_DIALOG_EXTENSIONS,
 } from '@shared/constants';
-import type { AutoLockMinutes, BuiltinAvatarId, LockReason } from '@shared/types';
+import type { AutoLockMinutes, BuiltinAvatarId, EditOp, LockReason } from '@shared/types';
 
 /**
  * true si T contiene bytes en algún nivel (Buffer es un Uint8Array). Se distribuye sobre las
@@ -84,6 +84,15 @@ describe('allowlists', () => {
       'vault:relocate',
       'vault:relocateCancel',
     ]);
+  });
+
+  it('F3: edits:save sustituye la lista de operaciones y devuelve las guardadas y el thumbRev', () => {
+    expect(INVOKE_CHANNELS).toContain('edits:save');
+    expectTypeOf<ReqOf<'edits:save'>>().toEqualTypeOf<{ mediaId: string; ops: EditOp[] }>();
+    expectTypeOf<ResOf<'edits:save'>>().toEqualTypeOf<{ edits: EditOp[]; thumbRev: number }>();
+    // El renderer lee las operaciones actuales y el thumbRev con media:get.
+    expectTypeOf<ResOf<'media:get'>['edits']>().toEqualTypeOf<EditOp[]>();
+    expectTypeOf<ResOf<'media:get'>['thumbRev']>().toEqualTypeOf<number>();
   });
 
   it('[H3-8] los canales de la bóveda no aceptan rutas del renderer', () => {

@@ -2,12 +2,13 @@
 // `ready`), y después de `ready` el proxy y el resolver de la app [H3-5], los guards de sesión,
 // los protocolos app:// y vault://, la limpieza de arranque, la sesión, el IPC y la ventana.
 import { join } from 'node:path';
-import { app, dialog, Menu, nativeTheme, powerMonitor, session } from 'electron';
+import { app, dialog, Menu, nativeTheme, powerMonitor, powerSaveBlocker, session } from 'electron';
 import { initAppPaths } from './app-paths';
 import { KV_DEFAULT_TRACKS, kvSet } from './db/repos/kv-repo';
 import { AppErrorException } from '@shared/errors';
 import { FAULT_POINTS, ImportService, type FaultPoint } from './import/import-service';
 import { registerAppHandlers } from './ipc/handlers/app';
+import { registerEditsHandlers } from './ipc/handlers/edits';
 import { importPathsFromTest, registerImportHandlers } from './ipc/handlers/import';
 import { registerMediaHandlers } from './ipc/handlers/media';
 import { registerVaultHandlers } from './ipc/handlers/vault';
@@ -52,6 +53,7 @@ import {
   setContentProtection,
   stealthWindows,
   setInitialThemeProvider,
+  setPlaybackReleaser,
 } from './window';
 
 // 1. Red de Node bloqueada antes de cualquier otra cosa.
@@ -177,6 +179,8 @@ function start(): void {
       let profiles: ProfileService | null = null;
       // Reconciliación (§12.6): se crea más abajo, con inFlight, ffmpeg y los eventos.
       let reconciler: Reconciler | null = null;
+      // Reproducción activa (3.6): impide que la pantalla se apague mientras suena un vídeo.
+      let displayBlockerId: number | null = null;
       const sessionManager = new SessionManager({
         loadProfile: (id) => {
           if (!profiles) throw new Error('profiles not ready');
@@ -198,6 +202,14 @@ function start(): void {
         },
         testAutoLockMs: testAutoLockMs(testHooks),
         exposeTestHooks: testHooks,
+        setDisplaySleepBlocked: (on) => {
+          if (on && displayBlockerId === null) {
+            displayBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+          } else if (!on && displayBlockerId !== null) {
+            powerSaveBlocker.stop(displayBlockerId);
+            displayBlockerId = null;
+          }
+        },
       });
       const profileStore = new ProfileStore(dataRoot);
       profiles = new ProfileService({
@@ -227,6 +239,8 @@ function start(): void {
         computeInitialTheme(settings.get(), nativeTheme.shouldUseDarkColors),
       );
       setSessionGate(sessionManager);
+      // Si el renderer cae o recarga con un vídeo sonando, nadie más retira 'playback' (3.6).
+      setPlaybackReleaser(() => sessionManager.setPlayback(false));
       registerAppHandlers({ ffmpegAvailable: () => ffmpeg.available });
       registerWindowHandlers();
       registerSettingsHandlers({ settings, prefs, session: sessionManager });
@@ -239,6 +253,8 @@ function start(): void {
 
       // Importación (§12): un único inFlight por proceso (lo comparte la reconciliación, §12.6).
       const inFlight = new InFlight();
+      // Edición no destructiva (§16.5): miniatura nueva por objeto nuevo, con el mismo inFlight.
+      registerEditsHandlers({ session: sessionManager, inFlight, library: libraryEvents });
 
       // Traslado de la bóveda y disco ausente (§8.7) y reconciliación al desbloquear (§12.6).
       const relocate: RelocateService = new RelocateService({
@@ -336,6 +352,19 @@ function start(): void {
           // soltar archivos del SO: devuelve el Result de import:paths.
           __galeriaTestImportPaths: (paths: unknown) =>
             importPathsFromTest(importHandlers, sessionManager, { paths }),
+        });
+        // Motivos de pausa del auto-bloqueo ('playback', 'job', …) y si el bloqueador de suspensión de
+        // pantalla está activo (3.7). Solo lectura y sin datos de la bóveda: nombres de motivos.
+        Object.defineProperties(globalThis, {
+          __galeriaAutoLockReasons: {
+            configurable: true,
+            get: (): string[] => sessionManager.autoLockPauseReasons,
+          },
+          __galeriaDisplaySleepBlocked: {
+            configurable: true,
+            get: (): boolean =>
+              displayBlockerId !== null && powerSaveBlocker.isStarted(displayBlockerId),
+          },
         });
       }
 

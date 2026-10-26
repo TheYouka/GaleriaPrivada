@@ -83,14 +83,15 @@ for (const [label, displayName, id] of [
 
       // Galería con elementos y dos seleccionados (el último foco queda en una celda).
       const cells = gridCells(page);
-      await cells.nth(1).click();
+      await cells.nth(1).click({ modifiers: ['Control'] });
       await cells.nth(3).click({ modifiers: ['Control'] });
       await expect(page.getByText('2 seleccionados', { exact: true })).toBeVisible();
       await page.mouse.move(5, 5);
       await snap(page, `gallery-${label}.png`);
 
       // Renombrar (F2 sobre un único elemento).
-      await cells.nth(2).click();
+      await page.keyboard.press('Escape');
+      await cells.nth(2).click({ modifiers: ['Control'] });
       await page.keyboard.press('F2');
       const rename = page.getByRole('dialog', { name: 'Renombrar' });
       await expect(rename).toBeVisible();

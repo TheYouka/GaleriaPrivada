@@ -12,7 +12,10 @@ import {
   AUTO_LOCK_MINUTES,
   AVATAR_TOKEN_PATTERN,
   BUILTIN_AVATAR_IDS,
+  CROP_MIN_SIZE,
+  CROP_TOLERANCE,
   DATE_MAX_MS,
+  EDIT_OPS_MAX,
   ID_PATTERN,
   IDS_MAX,
   IMPORT_PATHS_MAX,
@@ -26,7 +29,7 @@ import {
 } from '@shared/constants';
 import type { AnyInvokeChannel, ReqOf } from '@shared/ipc-contract';
 import { AVAILABLE_THEME_IDS, THEME_IDS, type ThemeId } from '@shared/themes';
-import type { AvatarInput, MediaQuery } from '@shared/types';
+import type { AvatarInput, EditOp, MediaQuery } from '@shared/types';
 import { GALLERY_SORT_SCHEMA, PRESENTATION_PLAIN_SCHEMA } from '../settings/settings-store';
 
 // ── Ayudantes ──────────────────────────────────────────────────────────────────────────────────
@@ -115,6 +118,29 @@ export const mediaQuerySchema: z.ZodType<MediaQuery> = z
     path: ['sort', 'field'],
   });
 
+/** Valor normalizado de un recorte: número finito en [0, 1] (zod 4 rechaza NaN e ±Infinity). */
+const unitSchema = z.number().min(0).max(1);
+
+/**
+ * Una operación de edición (§10.3, §16.3): `crop` con w, h ≥ 0,01, x + w ≤ 1 e y + h ≤ 1
+ * (tolerancia 1e-9). Objetos estrictos.
+ */
+export const editOpSchema: z.ZodType<EditOp> = z.discriminatedUnion('t', [
+  z.strictObject({ t: z.literal('rotate'), q: z.literal([1, 2, 3]) }),
+  z.strictObject({ t: z.literal('flipH') }),
+  z.strictObject({ t: z.literal('flipV') }),
+  z
+    .strictObject({
+      t: z.literal('crop'),
+      x: unitSchema,
+      y: unitSchema,
+      w: unitSchema.min(CROP_MIN_SIZE),
+      h: unitSchema.min(CROP_MIN_SIZE),
+    })
+    .refine((c) => c.x + c.w <= 1 + CROP_TOLERANCE, { message: 'crop-x', path: ['w'] })
+    .refine((c) => c.y + c.h <= 1 + CROP_TOLERANCE, { message: 'crop-y', path: ['h'] }),
+]);
+
 // ── Canales ────────────────────────────────────────────────────────────────────────────────────
 
 export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
@@ -194,4 +220,10 @@ export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
   'vault:relocate': z.strictObject({ target: z.enum(['choose', 'default']) }),
   'vault:relocateCancel': z.strictObject({ jobId: idSchema }),
   'vault:locate': z.strictObject({ profileId: idSchema }),
+
+  // ≤ 64 operaciones ([] = revertir); el editor colapsa antes a la forma canónica (§16.4).
+  'edits:save': z.strictObject({
+    mediaId: idSchema,
+    ops: z.array(editOpSchema).max(EDIT_OPS_MAX),
+  }),
 };

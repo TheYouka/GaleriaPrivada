@@ -2,6 +2,7 @@
 // pone ConfirmDialog) y el texto dice que el borrado es permanente: no hay papelera ni copia.
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { cancelDelete, confirmDelete, useLibraryStore } from '../../stores/library-store';
+import { focusViewer, isViewerOpen } from '../../stores/viewer-store';
 import { focusGalleryCell } from './gallery-focus';
 
 export function DeleteDialog() {
@@ -30,7 +31,11 @@ export function DeleteDialog() {
       }
       confirmLabel="Eliminar"
       onCloseAutoFocus={(e) => {
-        if (focusGalleryCell()) e.preventDefault();
+        // Con el visor abierto, el foco vuelve a él, no a la rejilla que tiene debajo.
+        if (isViewerOpen()) {
+          e.preventDefault();
+          focusViewer();
+        } else if (focusGalleryCell()) e.preventDefault();
       }}
       danger
       busy={deleting}

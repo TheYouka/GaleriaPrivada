@@ -1,7 +1,8 @@
 // Rejilla virtualizada de la galería (docs/DESIGN.md §14.6): TanStack Virtual sobre filas (cabeceras
 // de mes solo al ordenar por fecha, mosaicos cuadrados de 120/180/260 px), `role="grid"` con una
 // sola parada de Tab (roving tabindex), selección con Ctrl/Shift/Ctrl+A, atajos de teclado y menú
-// contextual. En esta fase un clic o Enter seleccionan (el visor llega en F3).
+// contextual. Un clic o Intro abren el visor (§14.6); Ctrl+clic, Mayús+clic, la casilla y Espacio
+// seleccionan.
 import {
   useCallback,
   useEffect,
@@ -20,6 +21,7 @@ import { formatDuration } from '../../lib/format';
 import { thumbUrl } from '../../lib/vault-url';
 import { requestDelete, requestRename, useLibraryStore } from '../../stores/library-store';
 import { useSelectionStore, type SelectionAction } from '../../stores/selection-store';
+import { openViewer, useViewerStore } from '../../stores/viewer-store';
 import { useTheme } from '../../themes/use-theme';
 import { focusGalleryCell } from './gallery-focus';
 import {
@@ -65,6 +67,8 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
   const tile = TILE_SIZES[size];
   const selected = useSelectionStore((s) => s.selected);
   const removedTick = useLibraryStore((s) => s.removedTick);
+  const viewerId = useViewerStore((s) => (s.open ? s.currentId : null));
+  const closedTick = useViewerStore((s) => s.closedTick);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -123,11 +127,12 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
   });
 
   // Tras un borrado, la celda enfocada puede haber desaparecido: el foco pasa a la que ocupa su sitio.
+  // Con el visor abierto el foco es suyo: la rejilla no lo toma.
   const lastRemovedTick = useRef(removedTick);
   useEffect(() => {
     if (lastRemovedTick.current === removedTick) return;
     lastRemovedTick.current = removedTick;
-    pendingFocus.current = true;
+    if (!useViewerStore.getState().open) pendingFocus.current = true;
   }, [removedTick]);
 
   const focusItem = useCallback(
@@ -139,6 +144,34 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
     },
     [model, virtualizer],
   );
+
+  // Con el visor abierto, la rejilla sigue al medio actual (sin tomar el foco) para que su mosaico
+  // esté montado al cerrar (animación inversa); al cerrarlo, el foco vuelve a ese mosaico (§16.1).
+  useEffect(() => {
+    if (!viewerId) return;
+    const index = items.findIndex((i) => i.id === viewerId);
+    const row = model.rowOfItem[index];
+    if (index < 0 || row === undefined) return;
+    setFocusIndex(index);
+    virtualizer.scrollToIndex(row, { align: 'auto' });
+  }, [viewerId, items, model, virtualizer]);
+  const lastClosedTick = useRef(closedTick);
+  useEffect(() => {
+    if (lastClosedTick.current === closedTick) return;
+    lastClosedTick.current = closedTick;
+    const closedId = useViewerStore.getState().closedId;
+    const index = items.findIndex((i) => i.id === closedId);
+    const target = index >= 0 ? index : active;
+    // Si el mosaico ya está montado se enfoca ahora; si no, `focusItem` lo desplaza a la vista y lo
+    // enfoca cuando se monte.
+    const cell = scrollRef.current?.querySelector<HTMLElement>(`[data-index="${target}"]`);
+    if (cell) {
+      setFocusIndex(target);
+      cell.focus({ preventScroll: true });
+    } else {
+      focusItem(target);
+    }
+  }, [closedTick, items, active, focusItem]);
 
   // Esc limpia la selección antes de que lo vea el shell (en Ondas, Esc en el contenido devuelve el
   // foco a la barra XMB; con una selección, primero hay que limpiarla).
@@ -158,10 +191,22 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
   const dispatch = (action: SelectionAction): void =>
     useSelectionStore.getState().dispatch(action, ids);
 
-  const onCellClick = (e: MouseEvent, item: MediaListItem): void => {
+  /** Abre el visor desde este mosaico (FLIP: rect, radio y proporción de la miniatura ya cargada). */
+  const openFrom = (cell: HTMLElement, item: MediaListItem): void => {
+    const r = cell.getBoundingClientRect();
+    const img = cell.querySelector('img');
+    const loaded = img !== null && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+    openViewer(item.id, {
+      rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      radius: Number.parseFloat(getComputedStyle(cell).borderTopLeftRadius) || 0,
+      aspect: loaded ? img.naturalWidth / img.naturalHeight : null,
+    });
+  };
+
+  const onCellClick = (e: MouseEvent<HTMLDivElement>, item: MediaListItem): void => {
     if (e.ctrlKey || e.metaKey) dispatch({ type: 'ctrl', id: item.id });
     else if (e.shiftKey) dispatch({ type: 'shift', id: item.id });
-    else dispatch({ type: 'click', id: item.id });
+    else openFrom(e.currentTarget, item);
   };
 
   const renameTargetFor = (item: MediaListItem): MediaListItem | null => {
@@ -206,7 +251,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
         break;
       case 'Enter':
         e.preventDefault();
-        dispatch({ type: 'click', id: item.id });
+        openFrom(e.currentTarget, item);
         break;
       case 'F2': {
         e.preventDefault();
@@ -295,6 +340,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                           key={item.id}
                           role="gridcell"
                           data-index={index}
+                          data-media-id={item.id}
                           aria-selected={isSelected}
                           aria-label={cellLabel(item)}
                           tabIndex={index === active ? 0 : -1}

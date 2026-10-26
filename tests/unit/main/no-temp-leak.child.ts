@@ -1,11 +1,13 @@
 // Proceso hijo de no-temp-leak.test.ts (docs/DESIGN.md §12.4 "sharp sin temporales en disco").
 // Se empaqueta con Vite a tests/.tmp/ y se lanza con TMP, TEMP y TMPDIR apuntando a una carpeta
 // vacía y vigilada con fs.watch. Usa los módulos reales de la app: media/thumbnails.ts (miniatura
-// de importación, vía sharp-loader.ts) y profiles/avatars.ts (foto de avatar). F3 añade
-// edits-render. Escribe un JSON con lo observado en stdout.
+// de importación, vía sharp-loader.ts), media/edits-render.ts (miniatura con ediciones, F3) y
+// profiles/avatars.ts (foto de avatar). Escribe un JSON con lo observado en stdout.
 import { readdirSync, readFileSync, unlinkSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { foldEdits } from '../../../src/shared/edits';
+import { renderEdits } from '../../../src/main/media/edits-render';
 import { photoThumbnail } from '../../../src/main/media/thumbnails';
 import { processAvatarPhoto } from '../../../src/main/profiles/avatars';
 
@@ -21,8 +23,17 @@ export interface ChildReport {
   seen: string[];
   entries: string[];
   thumbBytes: number[];
+  /** edits-render: EDIT_STATES.length por imagen. */
+  editBytes: number[];
   avatarBytes: number;
 }
+
+/** Giro + volteo + recorte (las dos pasadas) e identidad (una pasada). */
+export const EDIT_STATES = [
+  foldEdits([{ t: 'rotate', q: 1 }, { t: 'flipH' }, { t: 'crop', x: 0.1, y: 0.2, w: 0.7, h: 0.6 }]),
+  foldEdits([{ t: 'flipV' }, { t: 'crop', x: 0, y: 0, w: 0.5, h: 0.5 }]),
+  foldEdits([]),
+];
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -44,9 +55,16 @@ async function main(): Promise<void> {
   seen.length = 0;
 
   const thumbBytes: number[] = [];
+  const editBytes: number[] = [];
   for (const path of cfg.images) {
-    const thumb = await photoThumbnail(readFileSync(path));
+    const input = readFileSync(path);
+    const thumb = await photoThumbnail(input);
     thumbBytes.push(thumb.length);
+    // edits-render (F3): las dos pasadas del plan B (PNG intermedio en memoria) y la de identidad.
+    for (const state of EDIT_STATES) {
+      const edited = await renderEdits(input, state);
+      editBytes.push(edited.length);
+    }
   }
   const avatar = await processAvatarPhoto(cfg.avatar);
   await sleep(500); // eventos rezagados del vigilante
@@ -58,6 +76,7 @@ async function main(): Promise<void> {
     seen,
     entries: readdirSync(cfg.watchDir),
     thumbBytes,
+    editBytes,
     avatarBytes: avatar.length,
   };
   process.stdout.write(JSON.stringify(report));

@@ -9,7 +9,8 @@
 //      existe; si no, se devuelve el HMAC a la antigua. Un valor inválido se conserva con `error`;
 //   3. [H3-7] (P9) miniaturas ausentes: `readdir` de los 256 `thumbs/<aa>/` en un Set y comparación
 //      con `SELECT thumb_id … state = 'ready'`, sin un `stat` por miniatura. Las ausentes pasan a
-//      `thumb_id = NULL` y entran en la cola de regeneración (en segundo plano, una cada vez);
+//      `thumb_id = NULL` y entran en la cola de regeneración (en segundo plano, una cada vez, con
+//      los pasos 2–6 de §16.5 y las ediciones guardadas: vault/thumb-replace.ts);
 //   4. se borran los `tmp/*.part` que queden (por KeylessCleanup: se une a un borrado en curso);
 //   6. `pendingCleanup` en segundo plano (relocate.ts);
 //   7. barrido de huérfanos en segundo plano: 1 directorio `aa` cada 50 ms, ignorando `inFlight` y
@@ -19,15 +20,16 @@
 // La cola y el barrido usan la señal de la sesión (se aborta en el paso 2 del bloqueo) y piden la
 // DB, las claves y la carpeta con la época de la sesión [H3-6]: tras un bloqueo reciben LOCKED y
 // no tocan nada más. Durante un traslado (§8.7, paso 2) se pausan después del elemento en curso.
-import { randomBytes } from 'node:crypto';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppErrorException } from '@shared/errors';
 import { ID_PATTERN } from '@shared/constants';
+import { foldEdits } from '@shared/edits';
 import type { Id, LibraryChangeReason } from '@shared/types';
 import { KIND_MEDIA, KIND_THUMB, type ObjectKind } from '../crypto/file-format';
 import { openObject, type ObjectReader } from '../crypto/object-reader';
 import type { Db } from '../db/database';
+import { listEdits } from '../db/repos/edit-repo';
 import { listImportReplacements } from '../db/repos/kv-repo';
 import {
   clearThumbIds,
@@ -46,11 +48,15 @@ import {
 import { log } from '../log';
 import type { Ffmpeg } from '../media/ffmpeg';
 import { LoopbackServer } from '../media/loopback-server';
-import { photoThumbnail, videoThumbnail } from '../media/thumbnails';
+import { videoThumbnail } from '../media/thumbnails';
 import type { ReconcileContext, SessionManager } from '../session/session-manager';
 import type { InFlight } from './in-flight';
 import { fileIdOf, ObjectStore, type EraseResult } from './object-store';
+import { replaceThumb } from './thumb-replace';
 import { vaultPaths } from './vault-layout';
+
+/** Cola de regeneración: miniatura ausente (punto 3) o sustitución con ediciones (punto 2). */
+export type RegenMode = 'missing' | 'edited';
 
 /** Barrido de huérfanos: un directorio `aa` cada esto (§12.6, punto 7). */
 export const SWEEP_INTERVAL_MS = 50;
@@ -105,6 +111,8 @@ export interface ReconcileReport {
   replacementsCompleted: number;
   replacementsUndone: number;
   replacementsInvalid: number;
+  /** Punto 2: sustituciones terminadas que copiaron ediciones (su miniatura se rehace con ellas). */
+  editedReplacements: Id[];
   /** Punto 3: ids sin miniatura que entran en la cola. */
   missingThumbs: Id[];
   /** Punto 4. */
@@ -182,7 +190,7 @@ class Background {
   readonly gates: PauseGate[];
   private readonly regenGate: PauseGate;
   private readonly sweepGate: PauseGate;
-  private readonly queue: Id[] = [];
+  private readonly queue: { id: Id; mode: RegenMode }[] = [];
   private regenLoop: Promise<void> | null = null;
   private sweepLoop: Promise<void> | null = null;
 
@@ -196,8 +204,8 @@ class Background {
     this.gates = [this.regenGate, this.sweepGate];
   }
 
-  start(missing: readonly Id[]): void {
-    this.queue.push(...missing);
+  start(items: readonly { id: Id; mode: RegenMode }[]): void {
+    this.queue.push(...items);
     this.regenLoop = this.runRegen();
     this.sweepLoop = this.runSweep();
   }
@@ -208,9 +216,9 @@ class Background {
 
   private async runRegen(): Promise<void> {
     while (this.queue.length > 0 && !this.signal.aborted) {
-      const id = this.queue.shift() as Id;
+      const { id, mode } = this.queue.shift() as { id: Id; mode: RegenMode };
       try {
-        await this.regenGate.run(() => this.r.regenerateThumb(this.epoch, id, this.signal));
+        await this.regenGate.run(() => this.r.regenerateThumb(this.epoch, id, this.signal, mode));
       } catch (err) {
         if (this.signal.aborted || isLocked(err)) return;
         const code = err instanceof AppErrorException ? err.error.code : undefined;
@@ -261,6 +269,7 @@ export class Reconciler {
       replacementsCompleted: 0,
       replacementsUndone: 0,
       replacementsInvalid: 0,
+      editedReplacements: [],
       missingThumbs: [],
       partsRemoved: 0,
     };
@@ -312,7 +321,14 @@ export class Reconciler {
     if (this.deps.background !== false) {
       const bg = new Background(this, epoch, signal);
       this.bg = bg;
-      bg.start(report.missingThumbs);
+      const missing = new Set(report.missingThumbs);
+      bg.start([
+        ...report.missingThumbs.map((id) => ({ id, mode: 'missing' as const })),
+        // Si además le falta la miniatura, ya la rehace la entrada `missing` (con sus ediciones).
+        ...report.editedReplacements
+          .filter((id) => !missing.has(id))
+          .map((id) => ({ id, mode: 'edited' as const })),
+      ]);
     }
     return report;
   }
@@ -469,12 +485,14 @@ export class Reconciler {
           report.replacementsInvalid += 1;
           continue;
         }
-        // Tras el COMMIT, borrado criptográfico de los objetos antiguos. F3: si se copiaron
-        // ediciones, hay que regenerar la miniatura de newId (§12.7; en F2 no hay ediciones).
+        // Tras el COMMIT, borrado criptográfico de los objetos antiguos.
         if (result.oldExisted) {
           await store.eraseObject(value.old, KIND_MEDIA);
           if (result.oldThumbId) await store.eraseObject(result.oldThumbId, KIND_THUMB);
         }
+        // Se copiaron ediciones: la miniatura de newId se rehace con ellas (§12.7 punto 3, §16.5
+        // pasos 2–6), en la cola de segundo plano.
+        if (result.copiedEdits > 0) report.editedReplacements.push(newId);
         report.replacementsCompleted += 1;
       } else {
         try {
@@ -540,69 +558,46 @@ export class Reconciler {
   // ── Cola de regeneración (punto 3, §16.5 pasos 2–6) ──────────────────────────────────────────
 
   /**
-   * Rehace la miniatura de `id` (si sigue `ready` y sin miniatura): foto con sharp desde el objeto
-   * descifrado en memoria; vídeo con el fotograma leído del objeto cifrado por loopback. La nueva
-   * se cifra en `tmp/<thumbId>.part`, entra en inFlight, se renombra y se confirma con
-   * `thumb_rev += 1`. F3: las fotos editadas tienen que aplicar sus ediciones (§16.5, paso 3).
+   * Rehace la miniatura de `id` con los pasos 2–6 de §16.5 (vault/thumb-replace.ts): foto desde el
+   * objeto descifrado en memoria y CON SUS EDICIONES GUARDADAS (§16.3); vídeo con el fotograma
+   * leído del objeto cifrado por loopback. La nueva se cifra en `tmp/<thumbId>.part`, entra en
+   * inFlight, se renombra y se confirma con `thumb_rev += 1`.
+   *
+   * `missing` (punto 3): solo si la fila sigue `ready` y sin miniatura. `edited` (punto 2, una
+   * sustitución que copió ediciones): sustituye la miniatura actual, solo si sigue siendo la misma
+   * al confirmar (una edición guardada mientras tanto gana) y la antigua se borra tras el COMMIT.
    */
-  async regenerateThumb(epoch: number, id: Id, signal: AbortSignal): Promise<void> {
+  async regenerateThumb(
+    epoch: number,
+    id: Id,
+    signal: AbortSignal,
+    mode: RegenMode = 'missing',
+  ): Promise<void> {
     const { session } = this.deps;
-    const source = thumbSource(session.getDb(epoch), id);
+    const db = session.getDb(epoch);
+    const source = thumbSource(db, id, { anyThumb: mode === 'edited' });
     if (!source) return;
     if (source.kind === 'video' && !this.deps.ffmpeg?.available) return;
+    const expected = source.thumbId;
     const store = new ObjectStore(session.getVaultDir(epoch));
-    const webp =
-      source.kind === 'photo'
-        ? await this.photoFromObject(epoch, store, id)
-        : await this.videoFromObject(epoch, store, id, source.mime, source.durationMs, signal);
-    if (signal.aborted) {
-      webp.fill(0);
-      return;
-    }
-
-    const thumbId = randomBytes(16).toString('hex');
-    const keys = session.getKeyRing(epoch);
-    const writer = store.createWriter({ id: thumbId, kind: KIND_THUMB, kWrap: keys.kWrap, signal });
-    let unregister: () => void = () => undefined;
-    try {
-      unregister = session.registerWriter(writer, store.partPath(thumbId), epoch);
-      await writer.write(webp);
-      await writer.finish();
-    } catch (err) {
-      await writer.abort();
-      throw err;
-    } finally {
-      unregister();
-      webp.fill(0);
-    }
-
-    const release = this.deps.inFlight.track(thumbId);
-    try {
-      if (signal.aborted) {
-        // [H3-6] Tras el abort no se toca thumbs/: el .part lo borra el punto 4 del desbloqueo.
-        return;
-      }
-      try {
-        await store.promote(thumbId, KIND_THUMB);
-      } catch (err) {
-        await store.erasePart(thumbId);
-        throw err;
-      }
-      let ok = false;
-      try {
-        ok = setRegeneratedThumb(session.getDb(epoch), id, thumbId);
-      } catch (err) {
-        if (!isLocked(err)) throw err;
-      }
-      if (!ok) {
-        // Borrada o ya con miniatura; tras un bloqueo la deja el barrido siguiente [H3-6].
-        if (!signal.aborted) await store.eraseObject(thumbId, KIND_THUMB);
-        return;
-      }
-      this.deps.library?.changed('edit', [id]);
-    } finally {
-      release();
-    }
+    const ok = await replaceThumb(
+      { session, inFlight: this.deps.inFlight },
+      {
+        epoch,
+        mediaId: id,
+        signal,
+        state: source.kind === 'photo' ? foldEdits(listEdits(db, id)) : undefined,
+        produce:
+          source.kind === 'video'
+            ? () => this.videoFromObject(epoch, store, id, source.mime, source.durationMs, signal)
+            : undefined,
+        commit: (tx, thumbId) =>
+          setRegeneratedThumb(tx, id, thumbId, expected)
+            ? { oldThumbId: expected, value: true }
+            : null,
+      },
+    );
+    if (ok) this.deps.library?.changed('edit', [id]);
   }
 
   private async openRegistered(
@@ -637,18 +632,6 @@ export class Reconciler {
         await reader.close();
       },
     };
-  }
-
-  private async photoFromObject(epoch: number, store: ObjectStore, id: Id): Promise<Buffer> {
-    const reader = await this.openRegistered(epoch, store.objectPath(id), id, KIND_MEDIA);
-    let buffer: Buffer | null = null;
-    try {
-      buffer = await reader.readAll();
-      return await photoThumbnail(buffer);
-    } finally {
-      buffer?.fill(0);
-      await reader.close();
-    }
   }
 
   private async videoFromObject(

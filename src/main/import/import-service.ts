@@ -23,6 +23,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { lstat, open, statfs } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { AppErrorException } from '@shared/errors';
+import { foldEdits, sameEditState, type EditState } from '@shared/edits';
 import {
   DISK_FREE_FACTOR,
   DISK_FREE_MARGIN_BYTES,
@@ -40,6 +41,7 @@ import { KIND_MEDIA, KIND_THUMB, type ObjectKind } from '../crypto/file-format';
 import { openObject, type ObjectReader } from '../crypto/object-reader';
 import type { ObjectWriter, ObjectWriterResult } from '../crypto/object-writer';
 import type { Db } from '../db/database';
+import { listEdits } from '../db/repos/edit-repo';
 import {
   completeReplacement,
   deletePending,
@@ -47,6 +49,7 @@ import {
   insertPending,
   insertReplacing,
   markReady,
+  setRegeneratedThumb,
   undoReplacement,
   type MediaExifInput,
   type NewMedia,
@@ -55,11 +58,13 @@ import type { LibraryEvents } from '../ipc/library-events';
 import { log } from '../log';
 import type { Ffmpeg } from '../media/ffmpeg';
 import { LoopbackServer, type LoopbackTarget } from '../media/loopback-server';
+import { renderEdits } from '../media/edits-render';
 import { photoThumbnail, videoThumbnail } from '../media/thumbnails';
 import type { JobHandle } from '../session/jobs';
 import type { SessionManager } from '../session/session-manager';
 import type { InFlight } from '../vault/in-flight';
 import { fileIdOf, ObjectStore } from '../vault/object-store';
+import { replaceThumb } from '../vault/thumb-replace';
 import { videoCapturedAt } from './capture-date';
 import { analyzePhoto, readPhotoOriginal, type PhotoAnalysis } from './image-pipeline';
 import { removeRecentEntries } from './linux-recent';
@@ -917,7 +922,12 @@ class ImportJob {
     this.check(w);
     const durationMs =
       c.kind === 'video' ? (processed?.durationMs ?? c.prescan.summary.durationMs) : null;
-    const thumb = await this.thumbnail(buffer, partUrl, storedMime, durationMs);
+    // Sustitución de una foto dañada (§12.7 punto 3): la transacción B le copia las ediciones de
+    // la antigua, así que su miniatura se renderiza ya con ellas (§16.3), desde el buffer en
+    // memoria (el mismo plaintext que daría el paso 2 de §16.5).
+    const editState =
+      w.replaceOld && c.kind === 'photo' ? foldEdits(listEdits(this.db(), w.replaceOld)) : null;
+    const thumb = await this.thumbnail(buffer, partUrl, storedMime, durationMs, editState);
     if (partUrl) (await this.loopback()).unregister('part');
     this.check(w);
     if (thumb) {
@@ -965,6 +975,7 @@ class ImportJob {
     await this.fault('step7', c.path);
     this.check(w);
     let erase: { id: Id; kind: ObjectKind }[] = [];
+    let rerender = false;
     if (w.replaceOld) {
       const r = completeReplacement(this.db(), id, w.replaceOld);
       if (!r.ok) throw new Outcome('IO');
@@ -972,7 +983,12 @@ class ImportJob {
         erase = [{ id: w.replaceOld, kind: KIND_MEDIA }];
         if (r.oldThumbId) erase.push({ id: r.oldThumbId, kind: KIND_THUMB });
       }
-      // F3: si se copiaron ediciones, regenerar la miniatura de :new con 16.5 (PLAN.md nota 107).
+      // Si las ediciones copiadas no son las del paso 4 (se guardaron otras mientras tanto), la
+      // miniatura se rehace con los pasos 2–6 de §16.5 después del original (PLAN.md nota 141).
+      if (c.kind === 'photo' && r.copiedEdits > 0) {
+        const copied = foldEdits(listEdits(this.db(), id));
+        rerender = editState === null || !sameEditState(copied, editState);
+      }
     } else if (!markReady(this.db(), id)) {
       throw new Outcome('IO');
     }
@@ -987,7 +1003,38 @@ class ImportJob {
 
     // 8–9. Comprobar y borrar el original (no tras un bloqueo; tras "Cancelar", se conserva).
     await this.deleteOriginal(c);
+    if (rerender) await this.rerenderEditedThumb(id, w.thumbId);
     return 'next';
+  }
+
+  /**
+   * §12.7 punto 3 con ediciones: pasos 2–6 de §16.5 sobre la fila nueva (ya `ready`), con las
+   * ediciones guardadas. Solo sustituye la miniatura si sigue siendo `expected` (una edición
+   * guardada mientras tanto gana). Nunca lanza: la importación ya está confirmada; tras un
+   * bloqueo no hace nada más [H3-6].
+   */
+  private async rerenderEditedThumb(id: Id, expected: Id | null): Promise<void> {
+    if (this.aborted) return;
+    try {
+      const done = await replaceThumb(
+        { session: this.deps.session, inFlight: this.deps.inFlight },
+        {
+          epoch: this.epoch,
+          mediaId: id,
+          signal: this.handle.signal,
+          state: foldEdits(listEdits(this.db(), id)),
+          commit: (db, thumbId) =>
+            setRegeneratedThumb(db, id, thumbId, expected)
+              ? { oldThumbId: expected, value: true }
+              : null,
+        },
+      );
+      if (done) this.deps.library.changed('import');
+    } catch (err) {
+      if (this.aborted) return;
+      const code = err instanceof AppErrorException ? err.error.code : undefined;
+      log.warn('import.thumb-failed', { jobId: this.id, code });
+    }
   }
 
   /** NewMedia y su EXIF para el paso 5 (§12.4.1, §12.8). */
@@ -1166,9 +1213,12 @@ class ImportJob {
     partUrl: string | null,
     mime: string,
     durationMs: number | null,
+    editState: EditState | null = null,
   ): Promise<Buffer | null> {
     try {
-      if (buffer) return await photoThumbnail(buffer);
+      if (buffer) {
+        return editState ? await renderEdits(buffer, editState) : await photoThumbnail(buffer);
+      }
       return await videoThumbnail({
         ffmpeg: this.deps.ffmpeg,
         url: partUrl as string,

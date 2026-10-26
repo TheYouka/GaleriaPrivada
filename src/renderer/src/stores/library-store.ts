@@ -179,6 +179,13 @@ export async function renameItem(id: Id, name: string): Promise<AppError | null>
   return null;
 }
 
+/** Tras guardar una edición (edits:save): la miniatura de la rejilla se refresca con el `rev` nuevo. */
+export function setItemThumbRev(id: Id, thumbRev: number): void {
+  useLibraryStore.setState((s) => ({
+    items: s.items.map((i) => (i.id === id ? { ...i, thumbRev } : i)),
+  }));
+}
+
 export function requestDelete(ids: readonly Id[]): void {
   if (ids.length > 0) useLibraryStore.setState({ deleteIds: ids });
 }

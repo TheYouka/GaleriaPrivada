@@ -20,7 +20,11 @@ import {
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppErrorException } from '@shared/errors';
-import { KIND_MEDIA } from '../../../src/main/crypto/file-format';
+import { foldEdits } from '@shared/edits';
+import type { EditOp } from '@shared/types';
+import { KIND_MEDIA, KIND_THUMB } from '../../../src/main/crypto/file-format';
+import { renderEdits } from '../../../src/main/media/edits-render';
+import { getSharp } from '../../../src/main/media/sharp-loader';
 import type { Db } from '../../../src/main/db/database';
 import {
   importReplaceKey,
@@ -145,6 +149,33 @@ function failAt(h: ImportHarness, point: FaultPoint): void {
   h.faults.hook = (p) => {
     if (p === point) ioFault();
   };
+}
+
+/** Miniatura de la fila: id, thumb_rev y dimensiones del WebP descifrado. */
+async function thumbOf(
+  h: ImportHarness,
+  id: string,
+): Promise<{ id: string; rev: number; size: { width?: number; height?: number } }> {
+  const row = h.db().prepare('SELECT thumb_id, thumb_rev FROM media WHERE id = ?').get(id) as {
+    thumb_id: string;
+    thumb_rev: number;
+  };
+  const keys = h.session.getKeyRing(h.session.epoch);
+  const reader = await new ObjectStore(h.vaultDir).open(row.thumb_id, KIND_THUMB, keys.kWrap);
+  const webp = await reader.readAll();
+  await reader.close();
+  const meta = await (await getSharp())(webp).metadata();
+  return { id: row.thumb_id, rev: row.thumb_rev, size: { width: meta.width, height: meta.height } };
+}
+
+/** Dimensiones de la miniatura del fixture JPEG con esas ediciones (edits-render.ts). */
+async function expectedThumbSize(ops: EditOp[]): Promise<{ width?: number; height?: number }> {
+  const webp = await renderEdits(
+    readFileSync(fixturePath(manifest, 'jpeg') as string),
+    foldEdits(ops),
+  );
+  const meta = await (await getSharp())(webp).metadata();
+  return { width: meta.width, height: meta.height };
 }
 
 /** Flip de un byte del ciphertext (offset 200, dentro del primer chunk). */
@@ -654,6 +685,43 @@ describe('duplicados (§12.7)', () => {
     expectReplaced(db, oldId, newId, importedAt);
     expect(existsSync(oldObject)).toBe(false); // borrado criptográfico tras el COMMIT de B
     expect(await storedSha(h, newId)).toBe(manifest.files.jpeg?.sha256);
+    // F3 (§12.7 punto 3, §16.3): la miniatura de la nueva ya lleva las ediciones copiadas, sin
+    // una regeneración aparte (thumb_rev sigue en 0).
+    const thumb = await thumbOf(h, newId);
+    expect(thumb.rev).toBe(0);
+    expect(thumb.size).toEqual(await expectedThumbSize([{ t: 'flipH' }, { t: 'rotate', q: 1 }]));
+    expect(thumb.size).not.toEqual(await expectedThumbSize([]));
+  });
+
+  it('sustitución: si las ediciones cambian antes de B, la miniatura se rehace con los pasos 2–6', async () => {
+    const h = await harness();
+    const { oldId, file } = await damagedWithHistory(h);
+    h.faults.hook = (point) => {
+      // Entre el paso 4 (miniatura con flipH + rotate 1) y la transacción B: otra edición.
+      if (point === 'step6') {
+        h.db()
+          .prepare(
+            'INSERT INTO media_edits (media_id, seq, op_json, created_at) VALUES (?, ?, ?, ?)',
+          )
+          .run(oldId, 2, '{"t":"crop","x":0,"y":0,"w":0.5,"h":0.5}', 3);
+      }
+    };
+    const report = await h.run([file]);
+    expect(report).toMatchObject({ imported: 1, failed: [] });
+    const db = h.db();
+    const newId = mediaRows(db).find((r) => r.name === 'Mi foto favorita')?.id as string;
+    const thumb = await thumbOf(h, newId);
+    expect(thumb.rev).toBe(1);
+    expect(thumb.size).toEqual(
+      await expectedThumbSize([
+        { t: 'flipH' },
+        { t: 'rotate', q: 1 },
+        { t: 'crop', x: 0, y: 0, w: 0.5, h: 0.5 },
+      ]),
+    );
+    // Solo queda la miniatura nueva (la del paso 4, borrada tras el COMMIT) y ningún .part.
+    expect(vaultFiles(h.vaultDir).thumbs).toEqual([`${thumb.id.slice(0, 2)}/${thumb.id}`]);
+    expect(vaultFiles(h.vaultDir).tmp).toEqual([]);
   });
 
   it('caída entre A y B (antes del paso 7): nada se pierde; la reconciliación la termina', async () => {

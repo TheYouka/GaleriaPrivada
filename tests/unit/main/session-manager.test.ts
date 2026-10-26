@@ -489,6 +489,32 @@ describe('auto-bloqueo y vigilante (§13.2)', () => {
     expect(session.state).toBe('locked');
   });
 
+  it('3.6: setPlayback activa el bloqueador de suspensión de pantalla una vez y lo suelta al pausar', async () => {
+    const calls: boolean[] = [];
+    const { session, profileId } = await setup({ setDisplaySleepBlocked: (on) => calls.push(on) });
+    await session.unlock(profileId, pw());
+    session.setPlayback(true);
+    session.setPlayback(true); // sin cambio: no se vuelve a activar
+    expect(calls).toEqual([true]);
+    session.setPlayback(false);
+    expect(calls).toEqual([true, false]);
+    expect(session.autoLockPauseReasons).toEqual([]);
+    await session.lock('manual'); // cierra la DB (Windows no deja borrar la carpeta con ella abierta)
+  });
+
+  it('3.6: bloquear con un vídeo sonando suelta la pausa del auto-bloqueo y el bloqueador', async () => {
+    const calls: boolean[] = [];
+    const { session, profileId } = await setup({ setDisplaySleepBlocked: (on) => calls.push(on) });
+    await session.unlock(profileId, pw());
+    session.setPlayback(true);
+    await session.lock('manual');
+    expect(calls).toEqual([true, false]);
+    expect(session.autoLockPauseReasons).toEqual([]);
+    // Con la sesión bloqueada, setPlayback no activa nada.
+    session.setPlayback(true);
+    expect(calls).toEqual([true, false]);
+  });
+
   it("D18: un trabajo con setPausesAutoLock(true) pausa con el motivo 'job'", async () => {
     const { session, profileId } = await setup({ testAutoLockMs: 1000 });
     await session.unlock(profileId, pw());

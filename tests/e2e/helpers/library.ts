@@ -1,6 +1,7 @@
 // Ayudantes de los E2E de la galería y la importación (docs/PLAN.md 2.13): fixtures generados,
 // carpetas de origen propias de cada test, diálogos nativos simulados, importar por la interfaz y
 // comprobar que nada de lo importado queda en claro bajo la raíz de datos (§22).
+import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
@@ -247,6 +248,35 @@ export function scanForNeedles(
   return { scanned: scanned.length, hits, files: scanned };
 }
 
+/**
+ * Vídeo sintético largo (VP9 + Opus en MP4 con `+faststart`, testsrc2 + sine) con el ffmpeg
+ * empaquetado, para probar saltos de ±10 s y búsquedas (los fixtures de 4 s no dan para eso). Se
+ * importa tal cual (§12.5) y solo existe en `tests/.tmp/`.
+ */
+export function writeLongVideo(path: string, seconds: number): void {
+  const win = process.platform === 'win32';
+  const dir = join(ROOT, 'resources', 'ffmpeg', win ? 'win-x64' : 'linux-x64');
+  execFileSync(
+    join(dir, 'bin', win ? 'ffmpeg.exe' : 'ffmpeg'),
+    [
+      ...['-hide_banner', '-nostdin', '-v', 'error', '-y'],
+      ...['-f', 'lavfi', '-i', `testsrc2=size=320x180:rate=15:duration=${seconds}`],
+      ...['-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=48000:duration=${seconds}`],
+      ...['-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '300k'],
+      ...['-g', '15', '-c:a', 'libopus', '-b:a', '64k', '-movflags', '+faststart', '-f', 'mp4'],
+      path,
+    ],
+    {
+      env: win
+        ? { SystemRoot: process.env.SystemRoot ?? 'C:\\Windows' }
+        : { LD_LIBRARY_PATH: join(dir, 'lib') },
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 120_000,
+    },
+  );
+}
+
 /** Escribe un JPEG/PNG sintético y único (color de fondo distinto) con sharp, sin EXIF. */
 export async function writePhoto(
   path: string,
@@ -276,4 +306,160 @@ export async function writePhoto(
       : await image.jpeg({ quality: 80 + (seed % 15) }).toBuffer();
   writeFileSync(path, buffer);
   if (options.mtime) utimesSync(path, options.mtime, options.mtime);
+}
+
+/** Colores de los cuatro cuadrantes de `writeQuadrants`: rojo, verde, azul y amarillo. */
+export const QUADRANT_COLORS = {
+  red: [255, 0, 0],
+  green: [0, 200, 0],
+  blue: [0, 0, 255],
+  yellow: [255, 255, 0],
+} as const;
+export type QuadrantColor = keyof typeof QUADRANT_COLORS;
+
+/**
+ * PNG asimétrico de `width × height` con un color distinto en cada cuadrante (arriba a la izquierda
+ * rojo, arriba a la derecha verde, abajo a la izquierda azul, abajo a la derecha amarillo): cualquier
+ * giro, volteo o recorte cambia lo que se ve en cada punto. Sin EXIF.
+ */
+export async function writeQuadrants(
+  path: string,
+  options: { width?: number; height?: number; mtime?: Date } = {},
+): Promise<void> {
+  const sharp = (await import('sharp')).default;
+  const width = options.width ?? 400;
+  const height = options.height ?? 200;
+  const raw = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const color =
+        y < height / 2
+          ? x < width / 2
+            ? QUADRANT_COLORS.red
+            : QUADRANT_COLORS.green
+          : x < width / 2
+            ? QUADRANT_COLORS.blue
+            : QUADRANT_COLORS.yellow;
+      raw.set(color, (y * width + x) * 3);
+    }
+  }
+  writeFileSync(
+    path,
+    await sharp(raw, { raw: { width, height, channels: 3 } })
+      .png()
+      .toBuffer(),
+  );
+  if (options.mtime) utimesSync(path, options.mtime, options.mtime);
+}
+
+/** El color de cuadrante más cercano a un píxel [r, g, b]. */
+export function nearestQuadrant(rgb: readonly number[]): QuadrantColor {
+  let best: QuadrantColor = 'red';
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [name, c] of Object.entries(QUADRANT_COLORS) as [QuadrantColor, readonly number[]][]) {
+    const d = (rgb[0] - c[0]) ** 2 + (rgb[1] - c[1]) ** 2 + (rgb[2] - c[2]) ** 2;
+    if (d < bestDistance) {
+      best = name;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/** Los colores de cuadrante en cuatro puntos (en fracciones del ancho y el alto) de una captura PNG. */
+export async function quadrantsOfPng(
+  png: Buffer,
+  points: readonly (readonly [number, number])[],
+): Promise<{ width: number; height: number; colors: QuadrantColor[] }> {
+  const sharp = (await import('sharp')).default;
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const colors = points.map(([fx, fy]) => {
+    const x = Math.min(info.width - 1, Math.max(0, Math.floor(fx * info.width)));
+    const y = Math.min(info.height - 1, Math.max(0, Math.floor(fy * info.height)));
+    const i = (y * info.width + x) * info.channels;
+    return nearestQuadrant([data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0]);
+  });
+  return { width: info.width, height: info.height, colors };
+}
+
+/** Id del medio de una celda de la rejilla (`data-media-id`, un identificador aleatorio). */
+export async function mediaIdOf(cell: Locator): Promise<string> {
+  const id = await cell.getAttribute('data-media-id');
+  if (!id) throw new Error('la celda no tiene data-media-id');
+  return id;
+}
+
+/** `rev` de la miniatura de una celda (`vault://thumb/<id>?rev=<n>`). */
+export async function thumbRevOf(cell: Locator): Promise<number> {
+  const src = (await cell.locator('img').first().getAttribute('src')) ?? '';
+  const m = /[?&]rev=(\d+)/.exec(src);
+  if (!m) throw new Error(`miniatura sin rev: ${src}`);
+  return Number(m[1]);
+}
+
+/** SHA-256 de cada archivo de `vaults/<profileId>/objects/` (los objetos cifrados), por ruta relativa. */
+export function objectHashes(dataDir: string, profileId: string): Record<string, string> {
+  const base = join(dataDir, 'vaults', profileId, 'objects');
+  const out: Record<string, string> = {};
+  for (const file of filesUnder(base)) out[relative(base, file)] = sha256File(file);
+  return out;
+}
+
+/** Operaciones guardadas de un medio, tal como las devuelve media:get. */
+export async function savedEdits(page: Page, id: string): Promise<unknown[]> {
+  return page.evaluate(async (mediaId) => {
+    const api = (
+      window as unknown as {
+        galeria: {
+          invoke(
+            channel: 'media:get',
+            req: { id: string },
+          ): Promise<{ ok: boolean; data?: { edits: unknown[] } }>;
+        };
+      }
+    ).galeria;
+    const res = await api.invoke('media:get', { id: mediaId });
+    return res.ok && res.data ? res.data.edits : ['error'];
+  }, id);
+}
+
+/**
+ * Colores de cuadrante de la miniatura de un medio: se dibuja en un lienzo (el protocolo envía CORS
+ * para el origen del renderer) y se muestrea en los puntos dados.
+ */
+export async function thumbQuadrants(
+  page: Page,
+  id: string,
+  rev: number,
+  points: readonly (readonly [number, number])[],
+): Promise<{ width: number; height: number; colors: QuadrantColor[] }> {
+  const sampled = await page.evaluate(
+    async ({ id: mediaId, rev: r, pts }) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = `vault://thumb/${mediaId}?rev=${r}`;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('sin lienzo 2d');
+      ctx.drawImage(img, 0, 0);
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        pixels: pts.map(([fx, fy]) => {
+          const x = Math.min(canvas.width - 1, Math.floor(fx * canvas.width));
+          const y = Math.min(canvas.height - 1, Math.floor(fy * canvas.height));
+          return Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
+        }),
+      };
+    },
+    { id, rev, pts: points },
+  );
+  return {
+    width: sampled.width,
+    height: sampled.height,
+    colors: sampled.pixels.map((p) => nearestQuadrant(p)),
+  };
 }

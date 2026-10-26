@@ -12,7 +12,6 @@
 import { AppErrorException } from '@shared/errors';
 import { ID_PATTERN } from '@shared/constants';
 import type {
-  EditOp,
   ExifSummary,
   Id,
   MediaDetail,
@@ -23,6 +22,7 @@ import type {
 import type { CapturedAtSource } from '../../import/capture-date';
 import { foldName } from '../../import/naming';
 import type { Db } from '../database';
+import { listEdits } from './edit-repo';
 import { importReplaceKey, kvDelete, kvSet } from './kv-repo';
 
 export interface NewMedia {
@@ -324,29 +324,48 @@ export function clearThumbIds(db: Db, ids: readonly Id[]): number {
     .run(JSON.stringify(ids)).changes;
 }
 
-/** Cola de regeneración: lo necesario para rehacer la miniatura de una fila `ready` sin ella. */
+/**
+ * Regeneración de miniaturas: lo necesario para rehacer la de una fila `ready`. Por defecto solo
+ * si no tiene miniatura (cola del punto 3 de §12.6); con `anyThumb`, también si la tiene (y la
+ * devuelve como `thumbId`, la que se sustituirá).
+ */
 export function thumbSource(
   db: Db,
   id: Id,
-): { kind: MediaKind; mime: string; durationMs: number | null } | null {
+  opts: { anyThumb?: boolean } = {},
+): { kind: MediaKind; mime: string; durationMs: number | null; thumbId: Id | null } | null {
   const row = db
     .prepare(
-      "SELECT kind, mime, duration_ms FROM media WHERE id = ? AND state = 'ready' AND thumb_id IS NULL",
+      `SELECT kind, mime, duration_ms, thumb_id FROM media WHERE id = ? AND state = 'ready'
+       ${opts.anyThumb ? '' : 'AND thumb_id IS NULL'}`,
     )
-    .get(id) as { kind: MediaKind; mime: string; duration_ms: number | null } | undefined;
-  return row ? { kind: row.kind, mime: row.mime, durationMs: row.duration_ms } : null;
+    .get(id) as
+    | { kind: MediaKind; mime: string; duration_ms: number | null; thumb_id: string | null }
+    | undefined;
+  return row
+    ? { kind: row.kind, mime: row.mime, durationMs: row.duration_ms, thumbId: row.thumb_id }
+    : null;
 }
 
-/** Cola de regeneración (§16.5 paso 5): miniatura nueva y `thumb_rev += 1`. false si ya no aplica. */
-export function setRegeneratedThumb(db: Db, id: Id, thumbId: Id): boolean {
+/**
+ * Regeneración (§16.5 paso 5): miniatura nueva y `thumb_rev += 1`, solo si la fila sigue `ready`
+ * y con la miniatura `expected` (por defecto ninguna). false si ya no aplica (borrada, o una
+ * edición guardó otra miniatura mientras tanto).
+ */
+export function setRegeneratedThumb(
+  db: Db,
+  id: Id,
+  thumbId: Id,
+  expected: Id | null = null,
+): boolean {
   requireId(thumbId);
   return (
     db
       .prepare(
         `UPDATE media SET thumb_id = ?, thumb_rev = thumb_rev + 1
-         WHERE id = ? AND state = 'ready' AND thumb_id IS NULL`,
+         WHERE id = ? AND state = 'ready' AND thumb_id IS ?`,
       )
-      .run(thumbId, id).changes > 0
+      .run(thumbId, id, expected).changes > 0
   );
 }
 
@@ -448,18 +467,6 @@ export function listMedia(db: Db, query: MediaQuery): MediaListItem[] {
   return items;
 }
 
-function parseEdits(rows: { op_json: string }[]): EditOp[] {
-  const out: EditOp[] = [];
-  for (const r of rows) {
-    try {
-      out.push(JSON.parse(r.op_json) as EditOp);
-    } catch {
-      // una operación ilegible no impide ver el medio
-    }
-  }
-  return out;
-}
-
 function toExifSummary(r: ExifRow | undefined): ExifSummary | null {
   if (!r) return null;
   const out: ExifSummary = {};
@@ -485,9 +492,6 @@ export function getMedia(db: Db, id: Id): MediaDetail | null {
        FROM media_exif WHERE media_id = ?`,
     )
     .get(id) as ExifRow | undefined;
-  const edits = db
-    .prepare('SELECT op_json FROM media_edits WHERE media_id = ? ORDER BY seq')
-    .all(id) as { op_json: string }[];
   return {
     ...toListItem(row),
     mime: row.mime,
@@ -498,7 +502,8 @@ export function getMedia(db: Db, id: Id): MediaDetail | null {
     videoCodec: row.video_codec,
     audioCodec: row.audio_codec,
     exif: toExifSummary(exif),
-    edits: parseEdits(edits),
+    // Las operaciones guardadas, en orden (el renderer obtiene el EditState con foldEdits, §16.3).
+    edits: listEdits(db, id),
   };
 }
 

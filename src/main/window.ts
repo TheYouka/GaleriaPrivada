@@ -16,6 +16,7 @@ import {
 } from '@shared/themes';
 import type { GlobalSettings, WindowState } from '@shared/types';
 import { log } from './log';
+import { attachPlaybackRelease } from './playback-release';
 import { originOf } from './security/navigation-guard';
 import { isStealthWindowMode, STEALTH_WINDOW_POSITION } from './window-mode';
 
@@ -52,6 +53,13 @@ let initialThemeProvider: () => InitialTheme = () => ({
 /** index.ts lo conecta a settings.json (tema global y esquema con `system` resuelto). */
 export function setInitialThemeProvider(provider: () => InitialTheme): void {
   initialThemeProvider = provider;
+}
+
+let playbackReleaser: () => void = () => undefined;
+
+/** index.ts lo conecta a SessionManager.setPlayback(false): se llama si el renderer cae o recarga. */
+export function setPlaybackReleaser(release: () => void): void {
+  playbackReleaser = release;
 }
 
 /** Servidor de Vite (solo sin empaquetar y con ELECTRON_RENDERER_URL). */
@@ -177,6 +185,7 @@ function buildWindow(bounds?: Partial<Rectangle>): BrowserWindow {
     if (mainWindow === win) mainWindow = null;
   });
   attachStateEvents(win);
+  attachPlaybackRelease(win.webContents, () => playbackReleaser());
   return win;
 }
 
