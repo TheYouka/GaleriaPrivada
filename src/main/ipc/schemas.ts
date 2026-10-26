@@ -4,24 +4,29 @@
 //
 // Cadenas: text(min, max) normaliza a NFC, recorta y cuenta code points. Las rutas son la excepción
 // [H3-3]: rawPath() NO normaliza ni recorta (una ruta con NFD o con un espacio final es otro archivo,
-// y se borra el original importado: normalizarla podría borrar otro archivo). La usa import:paths
-// en F2.
+// y se borra el original importado: normalizarla podría borrar otro archivo). La usa import:paths.
+// SCHEMAS cubre también los canales privados del preload (PRIVATE_INVOKE_CHANNELS).
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import {
   AUTO_LOCK_MINUTES,
   AVATAR_TOKEN_PATTERN,
   BUILTIN_AVATAR_IDS,
+  DATE_MAX_MS,
   ID_PATTERN,
+  IDS_MAX,
+  IMPORT_PATHS_MAX,
+  MEDIA_NAME_MAX,
   PASSWORD_MAX_BYTES,
   PASSWORD_MIN_BYTES,
   PATH_MAX_UTF16,
   PROFILE_NAME_MAX,
   PROFILE_NAME_MIN,
+  SEARCH_MAX,
 } from '@shared/constants';
-import type { InvokeChannel, ReqOf } from '@shared/ipc-contract';
+import type { AnyInvokeChannel, ReqOf } from '@shared/ipc-contract';
 import { AVAILABLE_THEME_IDS, THEME_IDS, type ThemeId } from '@shared/themes';
-import type { AvatarInput } from '@shared/types';
+import type { AvatarInput, MediaQuery } from '@shared/types';
 import { GALLERY_SORT_SCHEMA, PRESENTATION_PLAIN_SCHEMA } from '../settings/settings-store';
 
 // ── Ayudantes ──────────────────────────────────────────────────────────────────────────────────
@@ -79,9 +84,40 @@ export const themeIdSchema: z.ZodType<ThemeId> = z
 
 const colorSchemePref = z.enum(['system', 'light', 'dark']);
 
+/** ids de media:delete (y playlists:addItems/removeItems en F4): 1–100 000, sin duplicados. */
+export const idListSchema = z
+  .array(idSchema)
+  .min(1)
+  .max(IDS_MAX)
+  .refine((ids) => new Set(ids).size === ids.length, { message: 'duplicates' });
+
+const dateMs = z.number().int().min(0).max(DATE_MAX_MS);
+
+/** MediaQuery (§10.3): search ≤ 200; dateFrom ≤ dateTo; 'position' solo con playlistId. */
+export const mediaQuerySchema: z.ZodType<MediaQuery> = z
+  .strictObject({
+    kind: z.enum(['all', 'photo', 'video']),
+    search: text(0, SEARCH_MAX).optional(),
+    dateFrom: dateMs.optional(),
+    dateTo: dateMs.optional(),
+    playlistId: idSchema.optional(),
+    sort: z.strictObject({
+      field: z.enum(['captured', 'imported', 'name', 'size', 'duration', 'position']),
+      dir: z.enum(['asc', 'desc']),
+    }),
+  })
+  .refine((q) => q.dateFrom === undefined || q.dateTo === undefined || q.dateFrom <= q.dateTo, {
+    message: 'date-range',
+    path: ['dateTo'],
+  })
+  .refine((q) => q.sort.field !== 'position' || q.playlistId !== undefined, {
+    message: 'position-needs-playlist',
+    path: ['sort', 'field'],
+  });
+
 // ── Canales ────────────────────────────────────────────────────────────────────────────────────
 
-export const SCHEMAS: { [C in InvokeChannel]: z.ZodType<ReqOf<C>> } = {
+export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
   'app:getInfo': z.undefined(),
 
   'window:minimize': z.undefined(),
@@ -138,4 +174,24 @@ export const SCHEMAS: { [C in InvokeChannel]: z.ZodType<ReqOf<C>> } = {
     gallerySort: GALLERY_SORT_SCHEMA.optional(),
     presentationDefaults: PRESENTATION_PLAIN_SCHEMA.optional(),
   }),
+
+  'media:list': mediaQuerySchema,
+  'media:get': z.strictObject({ id: idSchema }),
+  'media:rename': z.strictObject({ id: idSchema, name: text(1, MEDIA_NAME_MAX) }),
+  'media:delete': z.strictObject({ ids: idListSchema }),
+
+  'import:chooseFiles': z.undefined(),
+  'import:chooseFolder': z.undefined(),
+  // [H3-3] Cada ruta tal cual llegó de webUtils.getPathForFile: sin NFC ni trim.
+  'import:paths': z.strictObject({
+    paths: z.array(rawPath()).min(1).max(IMPORT_PATHS_MAX),
+  }),
+  'import:confirm': z.strictObject({ jobId: idSchema, convert: z.boolean() }),
+  'import:cancel': z.strictObject({ jobId: idSchema }),
+
+  'vault:getInfo': z.undefined(),
+  // [H3-8] Sin rutas: el destino sale del diálogo de main o es la ubicación predeterminada.
+  'vault:relocate': z.strictObject({ target: z.enum(['choose', 'default']) }),
+  'vault:relocateCancel': z.strictObject({ jobId: idSchema }),
+  'vault:locate': z.strictObject({ profileId: idSchema }),
 };

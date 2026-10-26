@@ -160,3 +160,9 @@ The user has no administrator rights on the Windows machine, so WSL2 is not avai
 **Phase 2.** Linux-only test vectors (GLib) stay as `it.todo` in Phase 2 and are fixed in Phase 7 from the report.
 
 **Alternatives.** GitHub Actions remains documented as an alternative only, and is not created.
+
+## 6. User decisions after Phase 2 (binding)
+
+- **D18 is fully CONFIRMED.** The inactivity timer stays paused during imports (except while awaiting confirmation) and during merges. Keep `IMPORT_PAUSES_AUTOLOCK = true`.
+- **R6 / task 2.15 is CLOSED WITHOUT IMPLEMENTATION.** The user accepts the occasional ~0.1 s main-thread stall during large imports. Do NOT move import crypto/hashing to a `utilityProcess`. The DESIGN §3 invariant ("no utilityProcess") stays.
+- **Phase 2 was tested manually by the user and works.**

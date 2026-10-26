@@ -9,4 +9,6 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   outputDir: 'test-results',
+  // Fixtures sintéticos en tests/.tmp/fixtures/ (PLAN.md 2.8).
+  globalSetup: './tests/e2e/global-setup.ts',
 });

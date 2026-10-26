@@ -34,6 +34,18 @@ const REASON_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   'kdf-memory':
     'No hay memoria suficiente para proteger la contraseña. Cierra otras aplicaciones e inténtalo de nuevo.',
   'confirm-name': 'El nombre no coincide con el del perfil.',
+  // Traslado de la bóveda (§8.7, paso 1).
+  'same-location': 'La bóveda ya está en la ubicación predeterminada.',
+  'folder-not-found': 'No se encuentra la carpeta elegida.',
+  'folder-not-writable': 'No se puede escribir en la carpeta elegida.',
+  'target-exists': 'En la carpeta elegida ya hay una bóveda de este perfil (o una copia a medias).',
+  'inside-vault': 'La carpeta de destino no puede estar dentro de la bóveda, ni al revés.',
+  'pending-cleanup':
+    'Todavía quedan restos de la ubicación anterior de la bóveda. Bórralos o inténtalo más tarde.',
+  'relocate-verify':
+    'La copia no coincide con el original. La bóveda sigue en su sitio y no se ha movido nada.',
+  'relocate-commit':
+    'Galería está terminando de mover la bóveda. Espera unos segundos e inténtalo de nuevo.',
 });
 
 function isErrorCode(code: unknown): code is ErrorCode {

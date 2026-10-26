@@ -17,6 +17,7 @@ import {
 import type { GlobalSettings, WindowState } from '@shared/types';
 import { log } from './log';
 import { originOf } from './security/navigation-guard';
+import { isStealthWindowMode, STEALTH_WINDOW_POSITION } from './window-mode';
 
 export const APP_ORIGIN = 'app://bundle';
 const APP_ENTRY = `${APP_ORIGIN}/index.html`;
@@ -115,12 +116,37 @@ function attachStateEvents(win: BrowserWindow): void {
   }
 }
 
+/** Modo discreto de los tests (GALERIA_E2E=1 sin empaquetar): ventana fuera de la pantalla. */
+export function stealthWindows(): boolean {
+  return isStealthWindowMode(app.isPackaged, process.env);
+}
+
+/**
+ * Muestra la ventana. En modo discreto con `showInactive()` (no la activa ni le da el foco) y sin
+ * maximizar (maximizar la traería a la pantalla); en uso normal, `show()`.
+ */
+function revealWindow(win: BrowserWindow, maximized = false): void {
+  if (win.isDestroyed()) return;
+  if (stealthWindows()) {
+    win.showInactive();
+    return;
+  }
+  if (maximized) win.maximize();
+  win.show();
+}
+
 function buildWindow(bounds?: Partial<Rectangle>): BrowserWindow {
   const { themeId, scheme } = initialThemeProvider();
+  const stealth = stealthWindows();
+  const position = stealth
+    ? { x: STEALTH_WINDOW_POSITION, y: STEALTH_WINDOW_POSITION, skipTaskbar: true }
+    : bounds?.x !== undefined && bounds?.y !== undefined
+      ? { x: bounds.x, y: bounds.y }
+      : {};
   const win = new BrowserWindow({
     width: bounds?.width ?? 1280,
     height: bounds?.height ?? 800,
-    ...(bounds?.x !== undefined && bounds?.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
+    ...position,
     minWidth: 960,
     minHeight: 600,
     show: false, // se muestra en 'ready-to-show' (evita destello blanco)
@@ -156,7 +182,7 @@ function buildWindow(bounds?: Partial<Rectangle>): BrowserWindow {
 
 export function createMainWindow(): BrowserWindow {
   const win = buildWindow();
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => revealWindow(win));
   mainWindow = win;
   void win.loadURL(getDevUrl() ?? APP_ENTRY);
   return win;
@@ -182,10 +208,7 @@ export function replaceMainWindow(): BrowserWindow {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
-    if (!win.isDestroyed()) {
-      if (maximized) win.maximize();
-      win.show();
-    }
+    revealWindow(win, maximized);
     if (old && !old.isDestroyed()) old.destroy();
   };
   // 5. Si la nueva no llega a ready-to-show en 10 s, se destruye la antigua igualmente.

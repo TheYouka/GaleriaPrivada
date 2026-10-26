@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { SCHEMAS, rawPath, text } from '../../../src/main/ipc/schemas';
-import { INVOKE_CHANNELS } from '../../../src/shared/ipc-contract';
+import { INVOKE_CHANNELS, PRIVATE_INVOKE_CHANNELS } from '../../../src/shared/ipc-contract';
 
 const id = (): string => randomBytes(16).toString('hex');
 const bytes = (n: number): Uint8Array => new Uint8Array(n).fill(0x61);
@@ -49,8 +49,29 @@ describe('rawPath() [H3-3]', () => {
 });
 
 describe('SCHEMAS', () => {
-  it('hay un esquema por canal de INVOKE_CHANNELS', () => {
-    expect(Object.keys(SCHEMAS).sort()).toEqual([...INVOKE_CHANNELS].sort());
+  it('hay un esquema por canal de INVOKE_CHANNELS y de PRIVATE_INVOKE_CHANNELS', () => {
+    expect(Object.keys(SCHEMAS).sort()).toEqual(
+      [...INVOKE_CHANNELS, ...PRIVATE_INVOKE_CHANNELS].sort(),
+    );
+  });
+
+  it('[H3-3] import:paths: rutas tal cual, 1–10 000, estricto', () => {
+    const schema = SCHEMAS['import:paths'];
+    const nfd = `${ABS}a\u0301.jpg`;
+    const spaced = `${ABS}foto.jpg `;
+    expect(schema.parse({ paths: [nfd, spaced] })).toEqual({ paths: [nfd, spaced] });
+    expect(schema.safeParse({ paths: [] }).success).toBe(false);
+    expect(schema.safeParse({ paths: Array(10_001).fill(nfd) }).success).toBe(false);
+    expect(schema.safeParse({ paths: Array(10_000).fill(nfd) }).success).toBe(true);
+    expect(schema.safeParse({ paths: ['relativa.jpg'] }).success).toBe(false);
+    expect(schema.safeParse({ paths: [nfd], extra: true }).success).toBe(false);
+  });
+
+  it('import:confirm e import:cancel', () => {
+    expect(SCHEMAS['import:confirm'].safeParse({ jobId: id(), convert: false }).success).toBe(true);
+    expect(SCHEMAS['import:confirm'].safeParse({ jobId: id() }).success).toBe(false);
+    expect(SCHEMAS['import:cancel'].safeParse({ jobId: 'x' }).success).toBe(false);
+    expect(SCHEMAS['import:chooseFiles'].safeParse(undefined).success).toBe(true);
   });
 
   it('profiles:create: contraseña de 8–1024 bytes, aviso obligatorio, estricto', () => {

@@ -72,23 +72,28 @@ const HEADER_FIELDS: [string, number, number][] = [
 ];
 
 describe('cabecera manipulada → INTEGRITY al abrir', () => {
-  it.each(HEADER_FIELDS)('cada bit de %s', async (_name, offset, length) => {
-    const small = randomBytes(100);
-    const obj = await writeObject(tmp, small, kWrap);
-    const original = readFileSync(obj.path);
-    for (let byte = offset; byte < offset + length; byte += 1) {
-      for (let bit = 0; bit < 8; bit += 1) {
-        const bytes = Buffer.from(original);
-        bytes[byte] = (bytes[byte] as number) ^ (1 << bit);
-        const err = await appErrorOf(() => openBytes(bytes, obj.fileId));
-        expect(err.code).toBe('INTEGRITY');
+  it.each(HEADER_FIELDS)(
+    'cada bit de %s',
+    async (_name, offset, length) => {
+      const small = randomBytes(100);
+      const obj = await writeObject(tmp, small, kWrap);
+      const original = readFileSync(obj.path);
+      for (let byte = offset; byte < offset + length; byte += 1) {
+        for (let bit = 0; bit < 8; bit += 1) {
+          const bytes = Buffer.from(original);
+          bytes[byte] = (bytes[byte] as number) ^ (1 << bit);
+          const err = await appErrorOf(() => openBytes(bytes, obj.fileId));
+          expect(err.code).toBe('INTEGRITY');
+        }
       }
-    }
-    // Control: sin tocar, abre.
-    const ok = await openBytes(original, obj.fileId);
-    expect((await ok.readAll()).equals(small)).toBe(true);
-    await ok.close();
-  });
+      // Control: sin tocar, abre.
+      const ok = await openBytes(original, obj.fileId);
+      expect((await ok.readAll()).equals(small)).toBe(true);
+      await ok.close();
+      // Timeout explícito: 256 aperturas por campo pasan de los 5 s con la CPU cargada (PLAN.md, nota 112).
+    },
+    60_000,
+  );
 });
 
 describe('chunks manipulados', () => {

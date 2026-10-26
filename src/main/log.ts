@@ -79,9 +79,46 @@ export const LOG_EVENTS = [
   // Protocolo vault:// (§11.4)
   'protocol.rejected',
   'protocol.io',
-  // Fases posteriores ya citadas en el diseño
+  'protocol.not-found',
+  // ffmpeg (§19.4)
+  'ffmpeg.missing',
+  'ffmpeg.decoders-failed',
+  'ffmpeg.failed',
+  // Object store (§12.10)
+  'object.erase-failed',
+  'object.rename-retry',
+  // Importación (§12.4, §12.7, §12.9, §12.9.1)
+  'import.finished',
+  'import.job-failed',
   'import.file.failed',
+  'import.thumb-failed',
+  'import.cleanup-failed',
   'import.original.hardlink',
+  'import.original.changed',
+  'import.original.overwrite-failed',
+  'import.original.unlink-failed',
+  'import.linux-cleanup',
+  // Reconciliación (§12.6)
+  'reconcile.done',
+  'reconcile.failed',
+  'reconcile.pending.dropped',
+  'reconcile.replace.invalid',
+  'reconcile.thumb-failed',
+  'reconcile.sweep-failed',
+  'reconcile.orphans-erased',
+  // Traslado de la bóveda y disco ausente (§8.7)
+  'relocate.started',
+  'relocate.done',
+  'relocate.failed',
+  'relocate.cancelled',
+  'relocate.interrupted',
+  'relocate.rollback-failed',
+  'relocate.skipped-entry',
+  'relocate.leftover',
+  'relocate.pending-cleanup',
+  'vault.located',
+  'vault.locate-rejected',
+  // Fases posteriores ya citadas en el diseño
   'protocol.integrity',
 ] as const;
 

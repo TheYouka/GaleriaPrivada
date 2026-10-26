@@ -11,7 +11,7 @@ export type ProfilesView =
   | { name: 'create' }
   | { name: 'edit'; profileId: Id };
 
-export type SettingsTab = 'appearance' | 'security';
+export type SettingsTab = 'appearance' | 'security' | 'storage';
 
 interface NavState {
   profilesView: ProfilesView;
@@ -23,6 +23,8 @@ interface NavState {
   focusedSeq: number;
   showProfiles(view: ProfilesView): void;
   navigate(key: NavKey): void;
+  /** Cambia la entrada activa sin mover el foco al <h1> (por ejemplo, el filtro de tipo de la galería). */
+  setActive(key: NavKey): void;
   setSettingsTab(tab: SettingsTab): void;
   markFocused(seq: number): void;
 }
@@ -35,6 +37,7 @@ export const useNavStore = create<NavState>((set) => ({
   focusedSeq: -1,
   showProfiles: (view) => set((s) => ({ profilesView: view, seq: s.seq + 1 })),
   navigate: (key) => set((s) => ({ active: key, seq: s.seq + 1 })),
+  setActive: (key) => set({ active: key }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   markFocused: (seq) => set({ focusedSeq: seq }),
 }));

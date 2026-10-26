@@ -139,7 +139,7 @@ test('desbloquear: "Contraseña incorrecta" con el texto seleccionado y después
   });
   await expect(page.getByRole('heading', { level: 1, name: 'Galería' })).toBeFocused();
   await expect(
-    page.getByText('Tu bóveda está lista. La importación llega en la siguiente fase.'),
+    page.getByText('Tu bóveda está vacía. Importa fotos y vídeos o arrástralos aquí.'),
   ).toBeVisible();
 
   page = await lockAndGetNewWindow(launched.app, () => page.keyboard.press('Control+L'));

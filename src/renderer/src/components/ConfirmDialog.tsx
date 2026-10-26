@@ -20,6 +20,8 @@ export interface ConfirmDialogProps {
   /** Si no se pasa, solo se muestra el botón de cancelar (con `cancelLabel`). */
   onConfirm?: () => void;
   className?: string;
+  /** Qué hacer con el foco al cerrar (por defecto, Radix lo devuelve a quien lo tenía). */
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 export function ConfirmDialog({
@@ -35,6 +37,7 @@ export function ConfirmDialog({
   busy = false,
   onConfirm,
   className,
+  onCloseAutoFocus,
 }: ConfirmDialogProps) {
   const submit = (e: FormEvent): void => {
     e.preventDefault();
@@ -55,6 +58,7 @@ export function ConfirmDialog({
           onEscapeKeyDown={(e) => {
             if (busy) e.preventDefault();
           }}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           <AlertDialog.Title className="text-xl font-semibold">{title}</AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-sm text-text">

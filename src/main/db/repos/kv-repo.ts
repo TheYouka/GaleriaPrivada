@@ -93,6 +93,36 @@ export function kvSet<K extends KvKey>(db: Db, key: K, value: KvValue<K>): void 
   ).run(key, JSON.stringify(result.data));
 }
 
+/** Una clave `import.replace.*` guardada (reconciliación, §12.6 punto 2). */
+export interface StoredImportReplace {
+  /** La clave tal cual (puede no tener el formato esperado). */
+  key: string;
+  /** El `newId` de la clave, o null si la clave no tiene el formato `import.replace.<32 hex>`. */
+  newId: Id | null;
+  /** El valor validado, o null si no valida (se conserva para diagnóstico). */
+  value: ImportReplaceValue | null;
+}
+
+/** Todas las claves `import.replace.*`, también las que no validan (sin registrar nada). */
+export function listImportReplacements(db: Db): StoredImportReplace[] {
+  const rows = db
+    .prepare("SELECT key, value_json FROM kv WHERE substr(key, 1, 15) = 'import.replace.'")
+    .all() as { key: string; value_json: string }[];
+  return rows.map((row) => {
+    const newId = IMPORT_REPLACE_KEY.test(row.key)
+      ? row.key.slice(KV_IMPORT_REPLACE_PREFIX.length)
+      : null;
+    let value: ImportReplaceValue | null = null;
+    try {
+      const parsed = IMPORT_REPLACE_SCHEMA.safeParse(JSON.parse(row.value_json));
+      if (parsed.success) value = parsed.data;
+    } catch {
+      value = null;
+    }
+    return { key: row.key, newId, value };
+  });
+}
+
 export function kvDelete(db: Db, key: KvKey): boolean {
   requireSchema(key);
   return db.prepare('DELETE FROM kv WHERE key = ?').run(key).changes > 0;

@@ -38,3 +38,15 @@ export function formatDate(ms: number): string {
 export function formatMonth(ms: number): string {
   return MONTH.format(ms);
 }
+
+const NAIVE_DATE = new Intl.DateTimeFormat('es', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** Fecha de pared codificada con Date.UTC (captured_at y los filtros de fecha, §12.8): "17 de mayo de 2024". */
+export function formatNaiveDate(ms: number): string {
+  return NAIVE_DATE.format(ms);
+}

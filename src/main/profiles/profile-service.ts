@@ -251,6 +251,33 @@ export class ProfileService {
     return { file, profile };
   }
 
+  /** El perfil guardado (traslado y disco ausente, §8.7). PROFILE_NOT_FOUND si no existe. */
+  async storedProfile(profileId: Id): Promise<StoredProfile> {
+    return (await this.requireProfile(profileId)).profile;
+  }
+
+  /**
+   * Sustituye `vault` del perfil (§8.7, pasos 6–8, y vault:locate), serializado con el resto de
+   * escrituras de profiles.json. `update` recibe el perfil actual y devuelve el `vault` nuevo; si
+   * devuelve el mismo objeto, no se escribe nada. Devuelve el perfil resultante.
+   */
+  updateVault(
+    profileId: Id,
+    update: (current: StoredProfile) => StoredProfile['vault'],
+  ): Promise<StoredProfile> {
+    return this.exclusive(async () => {
+      const { file, profile } = await this.requireProfile(profileId);
+      const vault = update(profile);
+      if (vault === profile.vault) return profile;
+      const updated: StoredProfile = { ...profile, vault };
+      await this.deps.store.write({
+        ...file,
+        profiles: file.profiles.map((p) => (p.id === profile.id ? updated : p)),
+      });
+      return updated;
+    });
+  }
+
   /** Perfil y carpeta de su bóveda para el desbloqueo (SessionManager, §13.1 paso 1). */
   async unlockTarget(profileId: Id): Promise<{ profile: StoredProfile; vaultDir: string }> {
     const { profile } = await this.requireProfile(profileId);

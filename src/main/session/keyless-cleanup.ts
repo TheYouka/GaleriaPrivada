@@ -11,6 +11,14 @@ import { log } from '../log';
 
 export type KeylessTask = () => Promise<void>;
 
+/**
+ * Clave de la unidad de los pasos 5–6 de un traslado (rename + profiles.json, §8.7). El desbloqueo
+ * de ese perfil la espera antes de leer profiles.json (§13.1, paso 1).
+ */
+export function relocateCommitKey(profileId: string): string {
+  return `relocate-commit:${profileId}`;
+}
+
 function errnoOf(err: unknown): string | undefined {
   const code = (err as { code?: unknown } | null)?.code;
   return typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : undefined;
@@ -51,6 +59,11 @@ export class KeylessCleanup {
   /** Tarea en curso sobre `path`, si la hay (el desbloqueo espera las de traslado, §13.1). */
   pending(path: string): Promise<void> | undefined {
     return this.tasks.get(KeylessCleanup.keyOf(path));
+  }
+
+  /** Tarea en curso con la clave `key` de runKey, si la hay. */
+  pendingKey(key: string): Promise<void> | undefined {
+    return this.tasks.get(key);
   }
 
   get size(): number {

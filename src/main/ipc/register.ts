@@ -9,7 +9,7 @@
 //      err.code y err.syscall, nunca err.message (los mensajes de fs incluyen rutas).
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { AppErrorException, type Result } from '@shared/errors';
-import type { InvokeChannel, ReqOf, ResOf } from '@shared/ipc-contract';
+import type { AnyInvokeChannel, ReqOf, ResOf } from '@shared/ipc-contract';
 import { log } from '../log';
 import { originOf } from '../security/navigation-guard';
 import { getMainWindow, getRendererOrigin } from '../window';
@@ -20,7 +20,7 @@ export interface HandleOptions {
   requiresUnlock: boolean;
 }
 
-export type Handler<C extends InvokeChannel> = (
+export type Handler<C extends AnyInvokeChannel> = (
   req: ReqOf<C>,
   event: IpcMainInvokeEvent,
 ) => ResOf<C> | Promise<ResOf<C>>;
@@ -88,7 +88,7 @@ function errInfo(err: unknown): { errno?: string; syscall?: string } {
   return { errno: token(e?.code), syscall: token(e?.syscall) };
 }
 
-export function handle<C extends InvokeChannel>(
+export function handle<C extends AnyInvokeChannel>(
   channel: C,
   options: HandleOptions,
   fn: Handler<C>,

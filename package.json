@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:e2e": "electron-vite build && playwright test",
     "spike:native": "electron scripts/native-spike.cjs",
-    "make:icon": "node scripts/make-icon.mjs"
+    "make:icon": "node scripts/make-icon.mjs",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",

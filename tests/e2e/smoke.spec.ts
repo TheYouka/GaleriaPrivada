@@ -2,12 +2,14 @@
 // El proceso del test levanta un servidor HTTP (TCP) y un socket UDP en 127.0.0.1 que cuentan lo
 // que reciben: ninguna capa de la app debe dejar pasar nada.
 import dgram from 'node:dgram';
+import { existsSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { GaleriaApi } from '../../src/shared/ipc-contract';
 import { PROD_CSP } from '../../src/main/security/csp';
-import { launchApp, type LaunchedApp } from './helpers/launch';
+import { launchApp, ROOT, type LaunchedApp } from './helpers/launch';
 
 type Counters = Record<'http' | 'https' | 'ws' | 'wss' | 'file' | 'other', number>;
 type GaleriaWindow = Window & { galeria: GaleriaApi };
@@ -104,9 +106,20 @@ test('2. preload e IPC: app:getInfo por el preload con sandbox y allowlist [H3-2
   const info = await page.evaluate(() =>
     (window as unknown as GaleriaWindow).galeria.invoke('app:getInfo'),
   );
+  // ffmpegAvailable es real desde F2 (§19.4): true si `npm run fetch:ffmpeg` dejó los binarios.
+  const ffmpegDir = join(
+    ROOT,
+    'resources',
+    'ffmpeg',
+    process.platform === 'win32' ? 'win-x64' : 'linux-x64',
+    'bin',
+  );
+  const exe = process.platform === 'win32' ? '.exe' : '';
+  const binariesExist =
+    existsSync(join(ffmpegDir, `ffmpeg${exe}`)) && existsSync(join(ffmpegDir, `ffprobe${exe}`));
   expect(info).toEqual({
     ok: true,
-    data: { ffmpegAvailable: false, platform: process.platform, version: '0.0.0' },
+    data: { ffmpegAvailable: binariesExist, platform: process.platform, version: '0.0.0' },
   });
   expect(
     await page.evaluate(() => typeof (window as unknown as GaleriaWindow).galeria.importDropped),

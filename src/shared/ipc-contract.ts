@@ -10,11 +10,21 @@ import type {
   AvatarInput,
   GlobalSettings,
   Id,
+  ImportConfirmNeeded,
+  ImportProgress,
+  ImportReport,
+  LibraryChanged,
   LockReason,
+  MediaDetail,
+  MediaListItem,
+  MediaQuery,
   ProfilePrefs,
   ProfileSummary,
+  RelocateDone,
+  RelocateProgress,
   SessionState,
   ThemeId,
+  VaultInfo,
   WindowState,
 } from './types';
 
@@ -44,11 +54,43 @@ export const INVOKE_CHANNELS = [
   'session:setPlayback',
   'prefs:get',
   'prefs:set',
+  'media:list',
+  'media:get',
+  'media:rename',
+  'media:delete',
+  'import:chooseFiles',
+  'import:chooseFolder',
+  'import:confirm',
+  'import:cancel',
+  'vault:getInfo',
+  'vault:relocate',
+  'vault:relocateCancel',
+  'vault:locate',
 ] as const;
 
-export const EVENT_CHANNELS = ['session:locking', 'session:locked', 'window:state'] as const;
+/**
+ * Canales que main registra pero que NO están en la allowlist genérica (§5.6, §12.2): el preload
+ * los invoca solo desde funciones propias. `import:paths` solo sale de `importDropped`, que obtiene
+ * las rutas con webUtils.getPathForFile; el renderer nunca construye ni envía rutas [H3-8].
+ */
+export const PRIVATE_INVOKE_CHANNELS = ['import:paths'] as const;
+
+export const EVENT_CHANNELS = [
+  'session:locking',
+  'session:locked',
+  'window:state',
+  'library:changed',
+  'import:progress',
+  'import:done',
+  'import:confirmNeeded',
+  'relocate:progress',
+  'relocate:done',
+] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
+export type PrivateInvokeChannel = (typeof PRIVATE_INVOKE_CHANNELS)[number];
+/** Todos los canales que registra main (los de la allowlist y los privados del preload). */
+export type AnyInvokeChannel = InvokeChannel | PrivateInvokeChannel;
 export type EventChannel = (typeof EVENT_CHANNELS)[number];
 
 /** Petición y respuesta de cada canal. Los canales "U" de §10.2 los marca main al registrarlos. */
@@ -105,6 +147,47 @@ interface InvokeMap {
   'prefs:get': { req: undefined; res: ProfilePrefs };
   /** U. */
   'prefs:set': { req: Partial<ProfilePrefs>; res: ProfilePrefs };
+
+  /** U. La biblioteca entera de la consulta (R13), con el orden total de §9.2. */
+  'media:list': { req: MediaQuery; res: { items: MediaListItem[] } };
+  /** U. NOT_FOUND si no hay fila `ready`. */
+  'media:get': { req: { id: Id }; res: MediaDetail };
+  /** U. */
+  'media:rename': { req: { id: Id; name: string }; res: MediaListItem };
+  /** U. Borrado permanente (§12.10): fila, EXIF, ediciones, playlists y borrado criptográfico. */
+  'media:delete': { req: { ids: Id[] }; res: { deleted: number } };
+
+  /**
+   * U. Diálogo nativo en main (§12.1); null si se cancela. BUSY sin abrir el diálogo si ya hay una
+   * importación activa (§12.11). El progreso llega por import:progress e import:done.
+   */
+  'import:chooseFiles': { req: undefined; res: { jobId: Id } | null };
+  /** U. Como import:chooseFiles, con una carpeta. */
+  'import:chooseFolder': { req: undefined; res: { jobId: Id } | null };
+  /** U. Solo vía importDropped (PRIVATE_INVOKE_CHANNELS). BUSY si ya hay una importación activa. */
+  'import:paths': { req: { paths: string[] }; res: { jobId: Id } };
+  /** U. Respuesta a import:confirmNeeded (§12.5.1). NOT_FOUND si no está en awaiting-confirmation. */
+  'import:confirm': { req: { jobId: Id; convert: boolean }; res: void };
+  /** U. Cancela la importación (§12.4, "Cancelar"). */
+  'import:cancel': { req: { jobId: Id }; res: void };
+
+  /** U. También durante el traslado (§5.6, punto 4). */
+  'vault:getInfo': { req: undefined; res: VaultInfo };
+  /**
+   * U. Traslado de la bóveda (§8.7). [H3-8] El renderer nunca envía una ruta: 'choose' abre el
+   * diálogo de carpeta en main y 'default' vuelve a GaleriaData/vaults/<id>. null si se cancela el
+   * diálogo. BUSY sin abrir el diálogo si hay algún trabajo activo. El resto llega por
+   * relocate:progress y relocate:done.
+   */
+  'vault:relocate': { req: { target: 'choose' | 'default' }; res: { jobId: Id } | null };
+  /** U. Se ignora desde el paso 5 de §8.7. NOT_FOUND si no es el traslado en curso. */
+  'vault:relocateCancel': { req: { jobId: Id }; res: void };
+  /**
+   * Con la bóveda bloqueada (disco ausente, §8.7): diálogo de carpeta en main; null si se cancela.
+   * [H3-8] Si la carpeta elegida no es la bóveda del perfil, VAULT_UNAVAILABLE con details.path =
+   * la ruta configurada (la que ya está en claro en profiles.json).
+   */
+  'vault:locate': { req: { profileId: Id }; res: ProfileSummary | null };
 }
 
 /** Payload de cada evento (main → renderer, solo a la ventana actual). */
@@ -114,6 +197,17 @@ interface EventMap {
   /** A la ventana que se va a sustituir, justo antes de crear la nueva (§13.3). */
   'session:locked': { reason: LockReason };
   'window:state': WindowState;
+  /** Agrupado durante importaciones y fusiones (ipc/library-events.ts). */
+  'library:changed': LibraryChanged;
+  /** Agrupado como mucho cada 100 ms, salvo los cambios de fase (§12.11). */
+  'import:progress': ImportProgress;
+  'import:done': ImportReport;
+  /** §12.5.1: vídeos que se recodificarían con pérdida (D8). */
+  'import:confirmNeeded': ImportConfirmNeeded;
+  /** Como mucho cada 250 ms (§8.7, paso 4). */
+  'relocate:progress': RelocateProgress;
+  /** No llega si un bloqueo interrumpe el traslado (la ventana se sustituye). */
+  'relocate:done': RelocateDone;
 }
 
 // Comprobación en compilación: los mapas no tienen claves fuera de sus allowlists (y ReqOf/PayloadOf
@@ -121,13 +215,16 @@ interface EventMap {
 type NoExtraKeys<M, K> = [Exclude<keyof M, K>] extends [never] ? true : false;
 type IsTrue<T extends true> = T;
 export type ContractKeysMatch = IsTrue<
-  [NoExtraKeys<InvokeMap, InvokeChannel>, NoExtraKeys<EventMap, EventChannel>] extends [true, true]
+  [NoExtraKeys<InvokeMap, AnyInvokeChannel>, NoExtraKeys<EventMap, EventChannel>] extends [
+    true,
+    true,
+  ]
     ? true
     : false
 >;
 
-export type ReqOf<C extends InvokeChannel> = InvokeMap[C]['req'];
-export type ResOf<C extends InvokeChannel> = InvokeMap[C]['res'];
+export type ReqOf<C extends AnyInvokeChannel> = InvokeMap[C]['req'];
+export type ResOf<C extends AnyInvokeChannel> = InvokeMap[C]['res'];
 export type PayloadOf<E extends EventChannel> = EventMap[E];
 
 /** Argumentos de invoke después del canal: se puede omitir la petición si es `undefined`. */
@@ -139,7 +236,11 @@ export interface GaleriaApi {
   invoke<C extends InvokeChannel>(channel: C, ...args: InvokeArgs<C>): Promise<Result<ResOf<C>>>;
   /** Devuelve la función para darse de baja. */
   on<E extends EventChannel>(event: E, cb: (payload: PayloadOf<E>) => void): () => void;
-  /** Fase 0: stub (P14). La Fase 2 resuelve las rutas con webUtils.getPathForFile e invoca import:paths. */
+  /**
+   * §12.2: cada elemento tiene que ser `instanceof File` (si no, VALIDATION); la ruta sale de
+   * webUtils.getPathForFile (también para carpetas) y se descartan las vacías (File creados en JS).
+   * Sin ninguna ruta, VALIDATION { reason: 'no-paths' }. Si no, invoca import:paths.
+   */
   importDropped(files: File[]): Promise<Result<{ jobId: Id }>>;
   /** Leído de process.argv (--galeria-theme, --galeria-scheme). */
   readonly initialTheme: { themeId: ThemeId; scheme: 'light' | 'dark' };

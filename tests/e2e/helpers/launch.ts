@@ -149,7 +149,35 @@ export async function createProfile(page: Page, name: string, password: string):
     })
     .check();
   const submit = page.getByRole('button', { name: 'Crear perfil', exact: true });
-  await expect(submit).toBeEnabled();
+  try {
+    await expect(submit).toBeEnabled();
+  } catch (err) {
+    // Diagnóstico (nota 83/136): "Crear perfil" no se habilitó con los campos ya comprobados. Deja en
+    // el fallo lo que ve el formulario, sin reintentar ni ocultar nada.
+    const seen = await page
+      .evaluate(() => {
+        const val = (label: string): string | null => {
+          const lab = Array.from(document.querySelectorAll('label')).find(
+            (l) => l.textContent?.trim() === label,
+          );
+          const input = lab && document.getElementById(lab.htmlFor);
+          return input instanceof HTMLInputElement ? `${input.value.length} caracteres` : null;
+        };
+        const box = document.getElementById('acknowledge-no-recovery');
+        return {
+          nombre: val('Nombre'),
+          contraseña: val('Contraseña'),
+          repetir: val('Repetir contraseña'),
+          casilla: box?.getAttribute('aria-checked') ?? null,
+          foco: document.activeElement?.tagName ?? null,
+          hasFocus: document.hasFocus(),
+          heading: document.querySelector('h1')?.textContent ?? null,
+        };
+      })
+      .catch((e: unknown) => `evaluate falló: ${String(e)}`);
+    console.log(`[e2e] createProfile: botón deshabilitado; formulario = ${JSON.stringify(seen)}`);
+    throw err;
+  }
   await submit.click();
   await expect(page.getByRole('heading', { level: 1, name: '¿Quién eres?' })).toBeVisible({
     timeout: 20_000,

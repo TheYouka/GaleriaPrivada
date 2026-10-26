@@ -155,9 +155,9 @@ describe('límites de la lectura', () => {
     expect(sniffBuffer(big)).toMatchObject({ kind: 'photo', format: 'avif' });
   });
 
-  it('el resto (vídeo hasta F2, vacío, texto) es unknown', () => {
-    expect(sniffBuffer(ftyp('isom', ['isom', 'mp41']))).toEqual({ kind: 'unknown' });
-    expect(sniffBuffer(ftyp('qt  ', ['qt  ']))).toEqual({ kind: 'unknown' });
+  it('el resto (vacío, texto) es unknown; los vídeos los cubre sniff.test.ts (F2)', () => {
+    expect(sniffBuffer(ftyp('isom', ['isom', 'mp41'])).kind).toBe('video');
+    expect(sniffBuffer(ftyp('qt  ', ['qt  '])).kind).toBe('video');
     expect(sniffBuffer(Buffer.alloc(0))).toEqual({ kind: 'unknown' });
     expect(sniffBuffer(Buffer.from([0xff, 0xd8]))).toEqual({ kind: 'unknown' });
     expect(sniffBuffer(Buffer.from('hola, esto es texto', 'utf8'))).toEqual({ kind: 'unknown' });

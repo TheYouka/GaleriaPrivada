@@ -1,7 +1,8 @@
 // Desbloqueo (docs/DESIGN.md §14.3): avatar y nombre, contraseña con foco automático, "Mostrar",
 // "Entrar" y "Cancelar". Enter envía; mientras se calcula Argon2, "Comprobando…" con aria-busy (y no
-// se puede cerrar: el resultado llegaría con el diálogo cerrado). No hay ningún enlace para
-// recuperar la contraseña.
+// se puede cerrar: el resultado llegaría con el diálogo cerrado). Con VAULT_UNAVAILABLE, la ruta,
+// "Reintentar" y "Buscar la bóveda…" (vault:locate, §8.7). No hay ningún enlace para recuperar la
+// contraseña.
 import { useRef, useState, type FormEvent, type RefObject } from 'react';
 import { motion } from 'motion/react';
 import type { AppError } from '@shared/errors';
@@ -14,7 +15,7 @@ import { announce } from '../../lib/announce';
 import { errorMessage } from '../../lib/errors-es';
 import { invoke } from '../../lib/ipc';
 import { passwordBytes } from '../../lib/password';
-import { useSessionStore } from '../../stores/session-store';
+import { refreshProfiles, useSessionStore } from '../../stores/session-store';
 
 export interface UnlockDialogProps {
   /** null = cerrado. */
@@ -39,12 +40,16 @@ function UnlockForm({
 }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<AppError | null>(null);
+  const [locating, setLocating] = useState(false);
+  /** Resultado de "Buscar la bóveda…" (§8.7): encontrada, o la carpeta no era la bóveda. */
+  const [located, setLocated] = useState<'found' | 'rejected' | null>(null);
 
   const submit = async (e?: FormEvent): Promise<void> => {
     e?.preventDefault();
-    if (busy || password.length === 0) return;
+    if (busy || locating || password.length === 0) return;
     setBusy(true);
     setError(null);
+    setLocated(null);
     const bytes = passwordBytes(password);
     const res = await invoke('session:unlock', { profileId: profile.id, password: bytes });
     bytes.fill(0);
@@ -68,6 +73,33 @@ function UnlockForm({
       ? error.details.path
       : null;
 
+  /** vault:locate: diálogo de carpeta en main; el renderer no envía ninguna ruta [H3-8]. */
+  const locate = async (): Promise<void> => {
+    if (busy || locating) return;
+    setLocating(true);
+    const res = await invoke('vault:locate', { profileId: profile.id });
+    setLocating(false);
+    if (res.ok) {
+      if (!res.data) return; // diálogo cancelado
+      setError(null);
+      setLocated('found');
+      announce('Bóveda encontrada. Escribe la contraseña para entrar.', 'polite');
+      void refreshProfiles();
+      inputRef.current?.focus();
+      return;
+    }
+    if (res.error.code === 'VAULT_UNAVAILABLE') {
+      // La ruta configurada sigue siendo la misma: se muestra la de la respuesta.
+      setError(res.error);
+      setLocated('rejected');
+      announce('Esa carpeta no es la bóveda de este perfil.', 'polite');
+      return;
+    }
+    setError(res.error);
+    setLocated(null);
+    announce(errorMessage(res.error), 'polite');
+  };
+
   return (
     <form
       onSubmit={(e) => void submit(e)}
@@ -85,6 +117,9 @@ function UnlockForm({
       {error && !wrong ? (
         <div className="rounded-md border border-danger-text bg-surface p-3 text-sm text-text">
           <p>{errorMessage(error)}</p>
+          {located === 'rejected' ? (
+            <p className="mt-2">Esa carpeta no es la bóveda de este perfil.</p>
+          ) : null}
           {vaultPath ? (
             <p className="mt-2">
               Ruta de la bóveda:{' '}
@@ -93,17 +128,30 @@ function UnlockForm({
           ) : null}
         </div>
       ) : null}
+      {located === 'found' && !error ? (
+        <p className="rounded-md border border-border-strong bg-surface p-3 text-sm text-text">
+          Bóveda encontrada. Escribe la contraseña para entrar.
+        </p>
+      ) : null}
       {busy ? (
         <p role="status" className="text-sm text-text-muted">
           Comprobando…
         </p>
       ) : null}
-      <div className="mt-1 flex justify-end gap-3">
-        <Button onClick={onCancel} disabled={busy}>
+      <div className="mt-1 flex flex-wrap justify-end gap-3">
+        <Button onClick={onCancel} disabled={busy || locating}>
           Cancelar
         </Button>
-        {/* "Buscar la bóveda…" llega en la Fase 2 (vault:locate, 2.11). */}
-        <Button type="submit" variant="primary" disabled={busy || password.length === 0}>
+        {vaultPath ? (
+          <Button onClick={() => void locate()} disabled={busy || locating}>
+            {locating ? 'Buscando…' : 'Buscar la bóveda…'}
+          </Button>
+        ) : null}
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={busy || locating || password.length === 0}
+        >
           {busy ? 'Comprobando…' : vaultPath ? 'Reintentar' : 'Entrar'}
         </Button>
       </div>

@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "version": "n8.1.3-23-g5c4f5744cd",
+  "release": "autobuild-2026-10-22-13-06",
+  "artifacts": {
+    "win": {
+      "dir": "win-x64",
+      "file": "ffmpeg-n8.1.3-23-g5c4f5744cd-win64-lgpl-shared-8.1.zip",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-22-13-06/ffmpeg-n8.1.3-23-g5c4f5744cd-win64-lgpl-shared-8.1.zip",
+      "sha256": "c41df73a3f3259e81d5d53e6ce0c4c80b4841a30894fb77954650e445daa6c53"
+    },
+    "linux": {
+      "dir": "linux-x64",
+      "file": "ffmpeg-n8.1.3-23-g5c4f5744cd-linux64-lgpl-shared-8.1.tar.xz",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-22-13-06/ffmpeg-n8.1.3-23-g5c4f5744cd-linux64-lgpl-shared-8.1.tar.xz",
+      "sha256": "97fa301cf2bbc0609f0879a3db4440a9829585dd14d3bfcf9d5d2080cc180705"
+    }
+  },
+  "sources": {
+    "ffmpeg": {
+      "commit": "5c4f5744cd60943125a78db692b728210102f255",
+      "file": "FFmpeg-5c4f5744cd60943125a78db692b728210102f255.tar.gz",
+      "url": "https://github.com/FFmpeg/FFmpeg/archive/5c4f5744cd60943125a78db692b728210102f255.tar.gz",
+      "sha256": "a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77"
+    },
+    "btbn": {
+      "tag": "autobuild-2026-10-22-13-06",
+      "file": "FFmpeg-Builds-autobuild-2026-10-22-13-06.tar.gz",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/archive/refs/tags/autobuild-2026-10-22-13-06.tar.gz",
+      "sha256": "4edb6d2449749b24a77b3c97d1b39c4c0e049bad0330e1a225818c0ed42bc3f6"
+    }
+  }
+}

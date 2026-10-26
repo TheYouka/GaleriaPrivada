@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   EVENT_CHANNELS,
   INVOKE_CHANNELS,
+  PRIVATE_INVOKE_CHANNELS,
   type EventChannel,
   type InvokeChannel,
   type PayloadOf,
@@ -42,19 +43,53 @@ describe('allowlists', () => {
     expect(new Set(EVENT_CHANNELS).size).toBe(EVENT_CHANNELS.length);
   });
 
-  it('import:paths no está en la allowlist genérica (§5.6)', () => {
+  it('import:paths no está en la allowlist genérica (§5.6): es un canal privado del preload', () => {
     expect(INVOKE_CHANNELS as readonly string[]).not.toContain('import:paths');
+    expect(PRIVATE_INVOKE_CHANNELS).toEqual(['import:paths']);
   });
 
-  it('incluye los canales y eventos de F1', () => {
-    for (const prefix of ['app:', 'window:', 'settings:', 'profiles:', 'session:', 'prefs:']) {
+  it('incluye los canales y eventos de F1 y los de medios e importación de F2', () => {
+    for (const prefix of [
+      'app:',
+      'window:',
+      'settings:',
+      'profiles:',
+      'session:',
+      'prefs:',
+      'media:',
+      'import:',
+    ]) {
       expect(INVOKE_CHANNELS.some((c) => c.startsWith(prefix))).toBe(true);
     }
+    expect(INVOKE_CHANNELS.filter((c) => c.startsWith('import:')).sort()).toEqual([
+      'import:cancel',
+      'import:chooseFiles',
+      'import:chooseFolder',
+      'import:confirm',
+    ]);
     expect([...EVENT_CHANNELS].sort()).toEqual([
+      'import:confirmNeeded',
+      'import:done',
+      'import:progress',
+      'library:changed',
+      'relocate:done',
+      'relocate:progress',
       'session:locked',
       'session:locking',
       'window:state',
     ]);
+    expect(INVOKE_CHANNELS.filter((c) => c.startsWith('vault:')).sort()).toEqual([
+      'vault:getInfo',
+      'vault:locate',
+      'vault:relocate',
+      'vault:relocateCancel',
+    ]);
+  });
+
+  it('[H3-8] los canales de la bóveda no aceptan rutas del renderer', () => {
+    expectTypeOf<ReqOf<'vault:relocate'>>().toEqualTypeOf<{ target: 'choose' | 'default' }>();
+    expectTypeOf<ReqOf<'vault:locate'>>().toEqualTypeOf<{ profileId: string }>();
+    expectTypeOf<ReqOf<'vault:relocateCancel'>>().toEqualTypeOf<{ jobId: string }>();
   });
 });
 

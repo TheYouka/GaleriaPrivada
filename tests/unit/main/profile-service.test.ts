@@ -292,7 +292,8 @@ describe('createProfile (§14.4)', () => {
     for (let i = 0; i < 10; i += 1) await create(ctx, `Perfil ${i}`);
     expect((await appErrorOf(() => create(ctx, 'Once'))).code).toBe('PROFILE_LIMIT');
     expect(readdirSync(join(ctx.root, 'vaults'))).toHaveLength(10);
-  });
+    // Timeout explícito: 11 creaciones con Argon2 compiten por la CPU con el resto de la suite.
+  }, 30_000);
 
   it('valida el aviso, la contraseña, el nombre y el token del avatar', async () => {
     const ctx = context();

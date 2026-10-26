@@ -13,6 +13,7 @@
 // Este módulo no importa `electron` en tiempo de ejecución: la ventana y los disparadores se
 // inyectan (index.ts), así se prueba en Vitest con fakes.
 import { stat } from 'node:fs/promises';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import type { App, Dialog, PowerMonitor } from 'electron';
 import { AppErrorException } from '@shared/errors';
 import type { Id, LockReason, ProfilePrefs, SessionState } from '@shared/types';
@@ -33,7 +34,7 @@ import {
 import { readVaultJson, vaultPaths } from '../vault/vault-layout';
 import { AutoLock } from './auto-lock';
 import { JobRegistry, type JobHandle, type JobKind } from './jobs';
-import { KeylessCleanup } from './keyless-cleanup';
+import { KeylessCleanup, relocateCommitKey } from './keyless-cleanup';
 
 /** Espera acotada del paso 3 con manual, inactivity y shutdown. */
 export const LOCK_WAIT_MS = 2000;
@@ -43,6 +44,53 @@ export const DRAIN_WAIT_MS = 5000;
 export const VAULT_WATCH_MS = 10_000;
 /** Linux: consulta de getSystemIdleState(60) (§13.2). */
 export const LINUX_LOCK_POLL_MS = 5000;
+/** Paso 1 del desbloqueo: espera a los pasos 5–6 de un traslado sin claves (§13.1); si no, IO. */
+export const RELOCATE_COMMIT_WAIT_MS = 10_000;
+
+/** Resolución del medidor del bucle de eventos de E2E (2.14, R6). */
+export const LOOP_DELAY_RESOLUTION_MS = 10;
+
+/**
+ * Gancho de medición de carga del hilo main (PLAN.md 2.14, R6). Solo con `exposeTestHooks`
+ * (GALERIA_E2E=1 sin empaquetar). `perf_hooks.monitorEventLoopDelay()` registra el intervalo real de
+ * un temporizador de 10 ms: un bloqueo de B ms aparece como ≈ 10 + B ms. `snapshot()` devuelve
+ * milisegundos y `blockedMs` ya descuenta la resolución; `reset()` vacía el histograma entre medidas.
+ */
+export interface LoopDelaySnapshot {
+  count: number;
+  resolutionMs: number;
+  p50Ms: number;
+  p99Ms: number;
+  p999Ms: number;
+  maxMs: number;
+  /** El bloqueo más largo del hilo main: `maxMs` menos la resolución del temporizador. */
+  blockedMs: number;
+}
+
+function installLoopDelayHook(): void {
+  const g = globalThis as {
+    __galeriaLoopDelay?: { reset(): void; snapshot(): LoopDelaySnapshot };
+  };
+  if (g.__galeriaLoopDelay) return;
+  const histogram = monitorEventLoopDelay({ resolution: LOOP_DELAY_RESOLUTION_MS });
+  histogram.enable();
+  const ms = (ns: number): number => Math.round((ns / 1e6) * 100) / 100;
+  g.__galeriaLoopDelay = {
+    reset: () => histogram.reset(),
+    snapshot: () => {
+      const maxMs = ms(histogram.max);
+      return {
+        count: histogram.count,
+        resolutionMs: LOOP_DELAY_RESOLUTION_MS,
+        p50Ms: ms(histogram.percentile(50)),
+        p99Ms: ms(histogram.percentile(99)),
+        p999Ms: ms(histogram.percentile(99.9)),
+        maxMs,
+        blockedMs: Math.max(0, Math.round((maxMs - LOOP_DELAY_RESOLUTION_MS) * 100) / 100),
+      };
+    },
+  };
+}
 
 /** Motivos con espera de 0 ms y pasos 1–4 síncronos. */
 const IMMEDIATE: ReadonlySet<LockReason> = new Set([
@@ -79,6 +127,7 @@ export interface UnlockResult {
 
 export interface ReconcileContext {
   epoch: number;
+  profileId: Id;
   db: Db;
   vaultDir: string;
   signal: AbortSignal;
@@ -136,6 +185,7 @@ export class SessionManager {
   private epochValue = 0;
   private keyRing: KeyRing | null = null;
   private db: Db | null = null;
+  private vaultDirValue: string | null = null;
   private jobs: JobRegistry | null = null;
   private previousJobs: JobRegistry | null = null;
   private attempt: Attempt | null = null;
@@ -154,6 +204,7 @@ export class SessionManager {
     this.autoLock = new AutoLock(() => {
       void this.lock('inactivity');
     });
+    if (deps.exposeTestHooks) installLoopDelayHook();
   }
 
   // ── Estado ───────────────────────────────────────────────────────────────────────────────────
@@ -214,6 +265,21 @@ export class SessionManager {
   getKeyRing(epoch?: number): KeyRing {
     if (!this.keyRing || (epoch !== undefined && epoch !== this.epochValue)) throw locked();
     return this.keyRing;
+  }
+
+  /** Carpeta de la bóveda de la sesión, con la misma regla de época que getDb. */
+  getVaultDir(epoch?: number): string {
+    if (!this.vaultDirValue || (epoch !== undefined && epoch !== this.epochValue)) throw locked();
+    return this.vaultDirValue;
+  }
+
+  /**
+   * Señal de la sesión (se aborta en el paso 2 del bloqueo, §13.3): vault:// la usa para cortar con
+   * controller.error() los streams abiertos (§11.5). Misma regla de época que getDb.
+   */
+  getSessionSignal(epoch?: number): AbortSignal {
+    if (!this.jobs || (epoch !== undefined && epoch !== this.epochValue)) throw locked();
+    return this.jobs.sessionSignal;
   }
 
   /** Nuevo trabajo con las reglas de §12.11. LOCKED si la sesión no está desbloqueada. */
@@ -315,8 +381,11 @@ export class SessionManager {
     let kek: Buffer | null = null;
     let mk: Buffer | null = null;
     try {
-      // 1. Trabajos de la sesión anterior [H3-6] y perfil.
+      // 1. Trabajos de la sesión anterior [H3-6], pasos 5–6 de un traslado sin claves de este
+      //    perfil (para leer ya la ruta definitiva de profiles.json, §13.1) y perfil.
       await this.waitPreviousDrained();
+      check();
+      await this.waitRelocateCommit(profileId);
       check();
       const target = await this.deps.loadProfile(profileId);
       check();
@@ -363,6 +432,7 @@ export class SessionManager {
       const open = this.deps.openDatabase ?? defaultOpenDatabase;
       this.db = open(dbPath, this.keyRing.kDb, { creating: false });
       (this.deps.migrate ?? defaultMigrate)(this.db, dbPath);
+      this.vaultDirValue = target.vaultDir;
       const registry: JobRegistry = new JobRegistry({
         epoch,
         onPauseChange: (paused) => {
@@ -378,6 +448,7 @@ export class SessionManager {
       if (this.deps.reconcile) {
         await this.deps.reconcile({
           epoch,
+          profileId,
           db: this.db,
           vaultDir: target.vaultDir,
           signal: this.jobs.sessionSignal,
@@ -417,6 +488,7 @@ export class SessionManager {
     this.jobs = null;
     closeDatabase(this.db);
     this.db = null;
+    this.vaultDirValue = null;
     this.keyRing?.zeroize();
     this.keyRing = null;
     this.phase = 'locked';
@@ -440,6 +512,72 @@ export class SessionManager {
       log.warn('session.drain-timeout', { count: previous.active().length });
     }
     if (this.previousJobs === previous) this.previousJobs = null;
+  }
+
+  /** Paso 1 del desbloqueo (§13.1): la unidad rename + profiles.json de un traslado, ≤ 10 s. */
+  private async waitRelocateCommit(profileId: Id): Promise<void> {
+    const pending = this.keyless.pendingKey(relocateCommitKey(profileId));
+    if (!pending) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timedOut = await Promise.race([
+      pending.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), RELOCATE_COMMIT_WAIT_MS);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    if (timedOut) {
+      throw new AppErrorException({ code: 'IO', details: { reason: 'relocate-commit' } });
+    }
+  }
+
+  // ── Mantenimiento: traslado de la bóveda (§8.7, §13.1) ───────────────────────────────────────
+
+  /**
+   * Paso 2: subestado `maintenance { jobId }`. Los canales "U" devuelven BUSY (register.ts),
+   * vault:// responde 503 y se pausan el auto-bloqueo (motivo 'maintenance') y el vigilante.
+   */
+  enterMaintenance(jobId: Id, epoch: number): void {
+    if (this.phase !== 'unlocked' || epoch !== this.epochValue) throw locked();
+    if (this.maintenance) throw new AppErrorException({ code: 'BUSY' });
+    this.maintenance = { jobId };
+    this.autoLock.pause('maintenance');
+  }
+
+  /** Paso 7 (o la vuelta atrás): sale de `maintenance`. Sin efecto si ya no es ese traslado. */
+  exitMaintenance(jobId: Id, epoch: number): void {
+    if (epoch !== this.epochValue || this.maintenance?.jobId !== jobId) return;
+    this.maintenance = null;
+    if (this.phase === 'unlocked') this.autoLock.resume('maintenance');
+  }
+
+  /**
+   * Paso 3: `PRAGMA wal_checkpoint(TRUNCATE)` y cerrar la DB. Desde aquí getDb() lanza LOCKED hasta
+   * reopenDb() (en `maintenance` los canales y el protocolo ya responden BUSY).
+   */
+  closeDbForMaintenance(epoch: number): void {
+    if (!this.maintenance) throw new AppErrorException({ code: 'BUSY' });
+    const db = this.getDb(epoch);
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+    } finally {
+      closeDatabase(db);
+      if (this.db === db) this.db = null;
+    }
+  }
+
+  /**
+   * Paso 7 (o la vuelta atrás a la bóveda antigua): abre la DB de `vaultDir` con K_db, la pasa a
+   * ser la carpeta de la sesión y reinicia el vigilante con su vault.json. Errores de openDatabase.
+   */
+  reopenDb(epoch: number, vaultDir: string): void {
+    if (!this.maintenance || this.phase !== 'unlocked') throw locked();
+    const keyRing = this.getKeyRing(epoch);
+    if (this.db) throw new AppErrorException({ code: 'INTERNAL', details: { reason: 'db-open' } });
+    const open = this.deps.openDatabase ?? defaultOpenDatabase;
+    this.db = open(vaultPaths(vaultDir).db, keyRing.kDb, { creating: false });
+    this.vaultDirValue = vaultDir;
+    this.startWatcher(vaultPaths(vaultDir).vaultJson);
   }
 
   // ── Bloqueo (§13.3) ──────────────────────────────────────────────────────────────────────────
@@ -505,6 +643,7 @@ export class SessionManager {
     // 4. Claves y DB.
     closeDatabase(this.db);
     this.db = null;
+    this.vaultDirValue = null;
     this.keyRing?.zeroize();
     this.keyRing = null;
     const readers = [...this.readers];

@@ -7,7 +7,7 @@ import { cx } from '../lib/cx';
 export function Toaster() {
   const items = useToastStore((s) => s.items);
   return (
-    <RToast.Provider label="Notificación" duration={5000} swipeDirection="right">
+    <RToast.Provider label="Notificación" duration={5000} swipeDirection="left">
       {items.map((t) => (
         <RToast.Root
           key={t.id}
@@ -29,7 +29,7 @@ export function Toaster() {
       {/* Nombre de la región en español (el de Radix por defecto es "Notifications ({hotkey})"). */}
       <RToast.Viewport
         label="Notificaciones ({hotkey})"
-        className="fixed right-4 bottom-4 z-[60] flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 outline-none"
+        className="fixed bottom-4 left-4 z-[60] flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 outline-none"
       />
     </RToast.Provider>
   );

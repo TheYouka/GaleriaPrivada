@@ -1,6 +1,7 @@
 // Tipos compartidos (docs/DESIGN.md §10.1). Son tipos puros: este archivo lo empaquetan main, el
 // preload y el renderer. Los tipos de fases posteriores ya están declarados para que el contrato
 // IPC sea estable.
+import type { Result } from './errors';
 import type { ThemeId } from './themes';
 
 export type { ThemeId } from './themes';
@@ -134,6 +135,15 @@ export interface MediaDetail extends MediaListItem {
   edits: EditOp[];
 }
 
+/** Motivo de `library:changed` (§10.2). */
+export type LibraryChangeReason = 'import' | 'delete' | 'rename' | 'edit' | 'merge' | 'playlist';
+
+/** Payload de `library:changed`: sin `ids` cuando se agrupa durante un trabajo. */
+export interface LibraryChanged {
+  reason: LibraryChangeReason;
+  ids?: Id[];
+}
+
 export type EditOp =
   /** Cuartos de vuelta en sentido horario. */
   | { t: 'rotate'; q: 1 | 2 | 3 }
@@ -179,7 +189,12 @@ export interface ImportReport {
   duplicates: number;
   skipped: number;
   failed: { name: string; code: ImportFailureCode }[];
-  originalsNotDeleted: { path: string; reason: 'IO' | 'CHANGED_DURING_IMPORT' }[];
+  /**
+   * Originales que se conservaron aunque su copia ya está en la bóveda (§12.4 pasos 8–9). La ruta
+   * es el único sitio donde el renderer ve rutas ([H3-8], §14.6). `CANCELLED`: "Cancelar" llegó
+   * después del paso 5 de ese archivo (PLAN.md, nota 105).
+   */
+  originalsNotDeleted: { path: string; reason: 'IO' | 'CHANGED_DURING_IMPORT' | 'CANCELLED' }[];
   cancelled: boolean;
 }
 
@@ -240,9 +255,30 @@ export interface MergeRequest {
   name: string;
 }
 
+/**
+ * Ajustes → Almacenamiento (§14.9). `path` es la ubicación de la bóveda: junto con las rutas de
+ * los originales no borrados (§14.6), la única ruta que ve el renderer [H3-8].
+ */
 export interface VaultInfo {
   location: 'default' | 'custom';
   path: string;
   sizeBytes: number;
   freeBytes: number;
+}
+
+/**
+ * Progreso del traslado (§8.7, paso 4). `totalBytes` cuenta la copia y la verificación (dos veces
+ * el tamaño de lo que se copia): `copiedBytes === totalBytes` marca el paso 5, desde el que
+ * "Cancelar" ya no tiene efecto (PLAN.md, nota 117).
+ */
+export interface RelocateProgress {
+  jobId: Id;
+  copiedBytes: number;
+  totalBytes: number;
+}
+
+/** Fin del traslado (§8.7). `leftoverPath`: restos de la bóveda antigua que no se pudieron borrar. */
+export interface RelocateDone {
+  jobId: Id;
+  result: Result<VaultInfo & { leftoverPath?: string }>;
 }

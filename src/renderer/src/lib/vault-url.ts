@@ -10,6 +10,13 @@ export function avatarUrl(profileId: Id, rev: number): string {
   return `vault://avatar/${profileId}?rev=${rev}`;
 }
 
+/** Miniatura de un medio; `rev` cambia cuando se regenera (§11.1). */
+export function thumbUrl(mediaId: Id, rev: number): string {
+  if (!ID_PATTERN.test(mediaId)) throw new RangeError('mediaId inválido');
+  if (!Number.isSafeInteger(rev) || rev < 0) throw new RangeError('rev inválido');
+  return `vault://thumb/${mediaId}?rev=${rev}`;
+}
+
 /** Foto de avatar elegida y aún no guardada (token de profiles:pickAvatarPhoto). */
 export function pendingAvatarUrl(token: string): string {
   if (!AVATAR_TOKEN_PATTERN.test(token)) throw new RangeError('token inválido');

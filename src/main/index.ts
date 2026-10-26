@@ -5,19 +5,26 @@ import { join } from 'node:path';
 import { app, dialog, Menu, nativeTheme, powerMonitor, session } from 'electron';
 import { initAppPaths } from './app-paths';
 import { KV_DEFAULT_TRACKS, kvSet } from './db/repos/kv-repo';
+import { AppErrorException } from '@shared/errors';
+import { FAULT_POINTS, ImportService, type FaultPoint } from './import/import-service';
 import { registerAppHandlers } from './ipc/handlers/app';
+import { importPathsFromTest, registerImportHandlers } from './ipc/handlers/import';
+import { registerMediaHandlers } from './ipc/handlers/media';
+import { registerVaultHandlers } from './ipc/handlers/vault';
+import { LibraryEvents } from './ipc/library-events';
 import { registerProfileHandlers } from './ipc/handlers/profiles';
 import { registerSessionHandlers } from './ipc/handlers/session';
 import { registerSettingsHandlers } from './ipc/handlers/settings';
 import { registerWindowHandlers } from './ipc/handlers/window';
 import { setSessionGate } from './ipc/register';
 import { initLog, log } from './log';
+import { Ffmpeg, resolveFfmpegPaths } from './media/ffmpeg';
 import { avatarFilePath, AvatarTokens } from './profiles/avatars';
 import { ProfileService } from './profiles/profile-service';
-import { ProfileStore } from './profiles/profile-store';
+import { ProfileStore, vaultDirOf } from './profiles/profile-store';
 import { registerAppProtocol } from './protocol/app-protocol';
 import { registerSchemesAsPrivileged } from './protocol/schemes';
-import { registerVaultProtocol } from './protocol/vault-protocol';
+import { registerVaultProtocol, sessionObjectSource } from './protocol/vault-protocol';
 import { installDevCsp } from './security/csp';
 import { installWebContentsGuards } from './security/navigation-guard';
 import {
@@ -30,6 +37,9 @@ import { installNodeEgressGuard } from './security/node-egress-guard';
 import { forbiddenDebugSwitch } from './security/startup-checks';
 import { installLockTriggers, SessionManager } from './session/session-manager';
 import { cleanupTmpFiles, PrefsStore, SettingsStore } from './settings/settings-store';
+import { InFlight } from './vault/in-flight';
+import { Reconciler } from './vault/reconcile';
+import { RelocateService } from './vault/relocate';
 import {
   computeInitialTheme,
   createMainWindow,
@@ -40,6 +50,7 @@ import {
   replaceMainWindow,
   sendToMainWindow,
   setContentProtection,
+  stealthWindows,
   setInitialThemeProvider,
 } from './window';
 
@@ -63,6 +74,24 @@ function testAutoLockMs(testHooks: boolean): number | undefined {
   if (!raw || !/^\d{3,6}$/.test(raw)) return undefined;
   const ms = Number(raw);
   return ms >= 100 && ms <= 600_000 ? ms : undefined;
+}
+
+/**
+ * Raíces que la importación nunca toca (§12.3 punto 2, [H3-3]): GaleriaData y la bóveda de cada
+ * perfil (y su pendingCleanup). Con profiles.json ilegible, al menos GaleriaData (la bóveda de la
+ * sesión la añade siempre el servicio).
+ */
+async function protectedRoots(dataRoot: string, store: ProfileStore): Promise<string[]> {
+  const roots = [dataRoot];
+  try {
+    for (const p of (await store.read()).profiles) {
+      roots.push(vaultDirOf(dataRoot, p));
+      if (p.vault.pendingCleanup) roots.push(p.vault.pendingCleanup);
+    }
+  } catch {
+    // VAULT_CORRUPT: se protege lo que se puede
+  }
+  return roots;
 }
 
 function start(): void {
@@ -89,6 +118,7 @@ function start(): void {
   app.on('second-instance', () => {
     const win = getMainWindow();
     if (!win) return;
+    if (stealthWindows()) return; // modo discreto de los tests: nunca se roba el foco
     if (win.isMinimized()) win.restore();
     win.focus();
   });
@@ -145,12 +175,18 @@ function start(): void {
 
       // Sesión y perfiles. GALERIA_TEST_FAST_KDF solo se respeta sin empaquetar (kdf.ts).
       let profiles: ProfileService | null = null;
+      // Reconciliación (§12.6): se crea más abajo, con inFlight, ffmpeg y los eventos.
+      let reconciler: Reconciler | null = null;
       const sessionManager = new SessionManager({
         loadProfile: (id) => {
           if (!profiles) throw new Error('profiles not ready');
           return profiles.unlockTarget(id);
         },
         readPrefs: (id) => prefs.get(id),
+        reconcile: async (ctx) => {
+          if (!reconciler) throw new Error('reconciler not ready');
+          await reconciler.run(ctx);
+        },
         ui: {
           sendLocking: (reason) => sendToMainWindow('session:locking', { reason }),
           hide: hideMainWindow,
@@ -163,9 +199,10 @@ function start(): void {
         testAutoLockMs: testAutoLockMs(testHooks),
         exposeTestHooks: testHooks,
       });
+      const profileStore = new ProfileStore(dataRoot);
       profiles = new ProfileService({
         dataRoot,
-        store: new ProfileStore(dataRoot),
+        store: profileStore,
         prefs,
         tokens,
         session: sessionManager,
@@ -173,21 +210,108 @@ function start(): void {
       });
       await profiles.startupCleanup();
 
-      // IPC y vault:// (solo avatares en F1).
+      // ffmpeg/ffprobe (§19.4): disponibilidad con fs.access y, en segundo plano, el conjunto de
+      // decodificadores de vídeo [H3-11].
+      const ffmpeg = new Ffmpeg(
+        resolveFfmpegPaths({
+          isPackaged: app.isPackaged,
+          resourcesPath: process.resourcesPath,
+          appPath: app.getAppPath(),
+        }),
+      );
+      await ffmpeg.checkAvailable();
+      void ffmpeg.loadDecoders();
+
+      // IPC y vault://.
       setInitialThemeProvider(() =>
         computeInitialTheme(settings.get(), nativeTheme.shouldUseDarkColors),
       );
       setSessionGate(sessionManager);
-      registerAppHandlers();
+      registerAppHandlers({ ffmpegAvailable: () => ffmpeg.available });
       registerWindowHandlers();
       registerSettingsHandlers({ settings, prefs, session: sessionManager });
       registerProfileHandlers({ profiles, tokens });
       registerSessionHandlers({ session: sessionManager });
+      const libraryEvents = new LibraryEvents((payload) =>
+        sendToMainWindow('library:changed', payload),
+      );
+      registerMediaHandlers({ session: sessionManager, events: libraryEvents });
+
+      // Importación (§12): un único inFlight por proceso (lo comparte la reconciliación, §12.6).
+      const inFlight = new InFlight();
+
+      // Traslado de la bóveda y disco ausente (§8.7) y reconciliación al desbloquear (§12.6).
+      const relocate: RelocateService = new RelocateService({
+        dataRoot,
+        session: sessionManager,
+        profiles,
+        events: {
+          progress: (p) => sendToMainWindow('relocate:progress', p),
+          done: (d) => sendToMainWindow('relocate:done', d),
+        },
+        background: {
+          pauseBackground: () => reconciler?.pauseBackground() ?? Promise.resolve(),
+          resumeBackground: () => reconciler?.resumeBackground(),
+        },
+      });
+      reconciler = new Reconciler({
+        session: sessionManager,
+        inFlight,
+        ffmpeg,
+        library: libraryEvents,
+        pendingCleanup: (id) => relocate.runPendingCleanup(id),
+      });
+      registerVaultHandlers({
+        relocate,
+        showOpenDialog: (options) => {
+          const win = getMainWindow();
+          return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+        },
+      });
+      // pendingCleanup también se reintenta al arrancar (§8.7, paso 8), en segundo plano.
+      void profileStore
+        .read()
+        .then((file) => {
+          for (const p of file.profiles) {
+            if (p.vault.pendingCleanup) void relocate.runPendingCleanup(p.id);
+          }
+        })
+        .catch(() => undefined);
+      let importFault: FaultPoint | null = null;
+      const importService = new ImportService({
+        session: sessionManager,
+        ffmpeg,
+        events: {
+          progress: (p) => sendToMainWindow('import:progress', p),
+          done: (r) => sendToMainWindow('import:done', r),
+          confirmNeeded: (c) => sendToMainWindow('import:confirmNeeded', c),
+        },
+        library: libraryEvents,
+        inFlight,
+        protectedRoots: () => protectedRoots(dataRoot, profileStore),
+        // Gancho de E2E (nota 108): fallo inyectado en el paso elegido de cada archivo.
+        faults: testHooks
+          ? (point) => {
+              if (point === importFault) {
+                throw new AppErrorException({ code: 'IO', details: { reason: 'test-fault' } });
+              }
+            }
+          : undefined,
+      });
+      const importHandlers = registerImportHandlers({
+        service: importService,
+        showOpenDialog: (options) => {
+          const win = getMainWindow();
+          return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+        },
+      });
       registerVaultProtocol(ses, {
         avatarFile: (id) => avatarFilePath(dataRoot, id),
         pendingAvatar: (token) => tokens.peek(token),
         rendererOrigin: getRendererOrigin,
         isUnlocked: () => sessionManager.isUnlocked,
+        inMaintenance: () => sessionManager.inMaintenance,
+        objects: sessionObjectSource(sessionManager),
       });
       installLockTriggers(sessionManager, { app, powerMonitor, dialog });
 
@@ -199,6 +323,19 @@ function start(): void {
           __galeriaTestWriteMarker: (ids: string[]): void => {
             kvSet(sessionManager.getDb(sessionManager.epoch), KV_DEFAULT_TRACKS, ids);
           },
+          // Importación (nota 108): solo cambian el comportamiento de main, no leen la bóveda.
+          // Fallo inyectado al empezar el paso `point` de cada archivo (null = ninguno).
+          __galeriaTestFailImportAt: (point: unknown): boolean => {
+            if (point === null) importFault = null;
+            else if ((FAULT_POINTS as readonly unknown[]).includes(point)) {
+              importFault = point as FaultPoint;
+            } else return false;
+            return true;
+          },
+          // El mismo camino de main que un arrastre (import:paths), por si Playwright no puede
+          // soltar archivos del SO: devuelve el Result de import:paths.
+          __galeriaTestImportPaths: (paths: unknown) =>
+            importPathsFromTest(importHandlers, sessionManager, { paths }),
         });
       }
 

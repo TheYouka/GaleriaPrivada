@@ -108,7 +108,7 @@ describe('vault://avatar', () => {
     ).toBe(200);
   });
 
-  it('media/thumb/music (F2/F4): 423 LOCKED con la sesión bloqueada, 404 con ella abierta', async () => {
+  it('music (F4) y media/thumb sin fuente de objetos: 423 LOCKED bloqueada, 404 abierta', async () => {
     const mediaId = randomBytes(16).toString('hex');
     for (const host of ['media', 'thumb', 'music']) {
       await expectError(

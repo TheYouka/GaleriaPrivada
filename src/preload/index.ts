@@ -1,12 +1,13 @@
 // Preload con sandbox (docs/DESIGN.md §3 y §10.2). Expone window.galeria con contextBridge.
 // [H3-2] Solo importa `electron` y `@shared/*` (que se empaqueta aquí: externalizeDeps: false).
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { Result } from '@shared/errors';
 import {
   EVENT_CHANNELS,
   INVOKE_CHANNELS,
   type GaleriaApi,
   type PayloadOf,
+  type ReqOf,
 } from '@shared/ipc-contract';
 import { DEFAULT_THEME_ID, isThemeId } from '@shared/themes';
 import type { Id } from '@shared/types';
@@ -43,12 +44,22 @@ const api: GaleriaApi = {
       ipcRenderer.removeListener(event, listener);
     };
   },
-  // P14: stub hasta la Fase 2.
-  importDropped(): Promise<Result<{ jobId: Id }>> {
-    return Promise.resolve({
-      ok: false,
-      error: { code: 'INTERNAL', details: { reason: 'not-implemented' } },
-    });
+  // §12.2: las rutas salen de webUtils.getPathForFile, nunca del renderer. import:paths no está en
+  // la allowlist genérica, así que esta es la única forma de invocarlo [H3-8].
+  importDropped(files: File[]): Promise<Result<{ jobId: Id }>> {
+    const validation = (reason: string): Promise<Result<{ jobId: Id }>> =>
+      Promise.resolve({ ok: false, error: { code: 'VALIDATION', details: { reason } } });
+    if (!Array.isArray(files)) return validation('not-files');
+    const paths: string[] = [];
+    for (const file of files) {
+      if (!(file instanceof File)) return validation('not-files');
+      // Vacía para un File creado en JS (no viene del disco): se descarta.
+      const path = webUtils.getPathForFile(file);
+      if (path) paths.push(path);
+    }
+    if (paths.length === 0) return validation('no-paths');
+    const req: ReqOf<'import:paths'> = { paths };
+    return ipcRenderer.invoke('import:paths', req) as Promise<Result<{ jobId: Id }>>;
   },
   initialTheme: readInitialTheme(),
 };

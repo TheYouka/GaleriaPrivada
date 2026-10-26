@@ -38,6 +38,15 @@ export function XmbShell({ nav, active, onNavigate, commandBar, children }: Shel
     el?.focus();
   }, [focus]);
 
+  // La pantalla activa puede cambiar desde fuera (F1, Ctrl+F, Ctrl+,): la barra sigue a su categoría
+  // sin mover el foco del DOM (no activa `pendingFocus`).
+  const activeCategory = categoryOf(nav, active);
+  const [seenActive, setSeenActive] = useState(active);
+  if (seenActive !== active) {
+    setSeenActive(active);
+    if (focus.category !== activeCategory) setFocus({ category: activeCategory, row: -1 });
+  }
+
   const moveTo = (next: XmbFocus): void => {
     pendingFocus.current = true;
     setFocus(next);
