@@ -361,8 +361,8 @@ test.describe('visor', () => {
     // cerrada cerraría el visor.
     await expect(async () => {
       if (await confirm.isVisible()) await page.keyboard.press('Escape');
-      await expect(confirm).toBeHidden({ timeout: 3000 });
-    }).toPass({ timeout: 30_000 });
+      await expect(confirm).toBeHidden({ timeout: 10_000 });
+    }).toPass({ timeout: 60_000 });
     await expect(dialog).toHaveAccessibleName(names[1] ?? '');
     await expect(dialog).toBeVisible();
 

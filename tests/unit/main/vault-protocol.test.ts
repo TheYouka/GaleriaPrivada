@@ -1,5 +1,6 @@
-// vault://media|thumb (docs/DESIGN.md §11) con requests simulados, una DB SQLCipher real y objetos
-// cifrados reales: Range, cabeceras de §11.3, errores de §11.4 y streams cortados al bloquear (§11.5).
+// vault://media|thumb|music (docs/DESIGN.md §11) con requests simulados, una DB SQLCipher real y
+// objetos cifrados reales: Range, cabeceras de §11.3, errores de §11.4 y streams cortados al
+// bloquear (§11.5). music (F4) sirve el archivo en claro de music/.
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,6 +13,7 @@ import { closeDatabase, type Db } from '../../../src/main/db/database';
 import { migrate } from '../../../src/main/db/migrate';
 import {
   handleVaultRequest,
+  sessionMusicSource,
   sessionObjectSource,
   type VaultProtocolDeps,
 } from '../../../src/main/protocol/vault-protocol';
@@ -291,6 +293,112 @@ describe('vault://thumb', () => {
     await expectError(await get(`vault://thumb/${ids.noThumb}`), 404, 'NOT_FOUND');
     // El id de la miniatura no es un mediaId.
     await expectError(await get(`vault://thumb/${ids.thumb}`), 404, 'NOT_FOUND');
+  });
+});
+
+describe('vault://music (F4, §8.6.1)', () => {
+  const musicDir = join(vaultDir, 'music');
+  const song = randomBytes(300_000);
+  const trackId = newId();
+  const gone = newId();
+
+  function insertTrack(id: string, fileName: string): void {
+    db.prepare(
+      `INSERT INTO music_tracks (id, file_name, title, title_fold, ext, mime, size_bytes,
+         duration_ms, imported_at) VALUES (?, ?, 'Canción', 'cancion', 'mp3', 'audio/mpeg', ?, NULL, 0)`,
+    ).run(id, fileName, song.length);
+  }
+
+  function musicDeps(s: FakeSession): VaultProtocolDeps {
+    return { ...deps(s), music: sessionMusicSource(s) };
+  }
+
+  const music = (
+    url: string,
+    headers: Record<string, string> = {},
+    method = 'GET',
+    s: FakeSession = session,
+  ): Promise<Response> => handleVaultRequest(new Request(url, { method, headers }), musicDeps(s));
+
+  beforeAll(() => {
+    mkdirSync(musicDir, { recursive: true });
+    writeFileSync(join(musicDir, `${trackId}.mp3`), song);
+    insertTrack(trackId, `${trackId}.mp3`);
+    insertTrack(gone, `${gone}.mp3`); // fila sin archivo
+  });
+
+  it('200 con el archivo en claro, el MIME de music_tracks y las cabeceras de §11.3 (CORS)', async () => {
+    const res = await music(`vault://music/${trackId}`);
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer()).equals(song)).toBe(true);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect(res.headers.get('content-length')).toBe(String(song.length));
+    expect(res.headers.get('accept-ranges')).toBe('bytes');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+    expect(res.headers.get('access-control-expose-headers')).toBe(
+      'Content-Range, Content-Length, Accept-Ranges',
+    );
+  });
+
+  it('Range: 206 con los bytes exactos, HEAD sin cuerpo y 416 fuera de rango', async () => {
+    const P = song.length;
+    const res = await music(`vault://music/${trackId}`, { Range: 'bytes=1000-70999' });
+    expect(res.status).toBe(206);
+    expect(res.headers.get('content-range')).toBe(`bytes 1000-70999/${P}`);
+    expect(Buffer.from(await res.arrayBuffer()).equals(song.subarray(1000, 71000))).toBe(true);
+    const head = await music(`vault://music/${trackId}`, { Range: 'bytes=-10' }, 'HEAD');
+    expect(head.status).toBe(206);
+    expect(head.headers.get('content-length')).toBe('10');
+    expect((await head.arrayBuffer()).byteLength).toBe(0);
+    const out = await music(`vault://music/${trackId}`, { Range: `bytes=${P}-` });
+    await expectError(out, 416, null);
+    expect(out.headers.get('content-range')).toBe(`bytes */${P}`);
+  });
+
+  it('id inválido → 400; sin fila, fila sin archivo o un id de medio → 404; maintenance → 503', async () => {
+    await expectError(await music('vault://music/no-es-un-id'), 400, 'VALIDATION');
+    await expectError(await music(`vault://music/${trackId}/x`), 400, 'VALIDATION');
+    await expectError(await music(`vault://music/${newId()}`), 404, 'NOT_FOUND');
+    await expectError(await music(`vault://music/${gone}`), 404, 'NOT_FOUND');
+    await expectError(await music(`vault://music/${ids.ready}`), 404, 'NOT_FOUND');
+    session.maintenance = true;
+    try {
+      await expectError(await music(`vault://music/${trackId}`), 503, 'BUSY');
+    } finally {
+      session.maintenance = false;
+    }
+  });
+
+  it('un file_name de la DB que no es <id>.<ext> nunca se sirve (ni sale de music/)', async () => {
+    const evil = newId();
+    insertTrack(evil, '../library.db');
+    await expectError(await music(`vault://music/${evil}`), 404, 'NOT_FOUND');
+  });
+
+  it('bloqueada → 423; un stream en curso termina con error al bloquear', async () => {
+    const own = new FakeSession(db, null, vaultDir);
+    const big = newId();
+    const data = randomBytes(2 * 1024 * 1024);
+    writeFileSync(join(musicDir, `${big}.wav`), data);
+    insertTrack(big, `${big}.wav`);
+    const res = await music(`vault://music/${big}`, {}, 'GET', own);
+    expect(res.status).toBe(200);
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    expect((await reader.read()).done).toBe(false);
+    own.lock();
+    let failed: unknown = null;
+    try {
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    } catch (err) {
+      failed = err;
+    }
+    expect(failed).toMatchObject({ error: { code: 'LOCKED' } });
+    await expectError(await music(`vault://music/${trackId}`, {}, 'GET', own), 423, 'LOCKED');
   });
 });
 

@@ -91,6 +91,18 @@ export const PRESENTATION_LIMITS = Object.freeze({
 /** music:import (§8.6.1): archivos por diálogo y tamaño de cada uno. */
 export const MUSIC_IMPORT_MAX_FILES = 200;
 export const MUSIC_MAX_BYTES = 1 * GiB;
+/** La firma de una pista se decide con los primeros 64 bytes (§8.6.1). */
+export const MUSIC_SNIFF_BYTES = 64;
+/** Filtro "Música" del diálogo de music:import (§8.6.1). Solo es una ayuda: decide la firma. */
+export const MUSIC_DIALOG_EXTENSIONS: readonly string[] = Object.freeze([
+  'mp3',
+  'm4a',
+  'aac',
+  'ogg',
+  'opus',
+  'flac',
+  'wav',
+]);
 
 // ── Importación (§12.3) ────────────────────────────────────────────────────────────────────────
 

@@ -178,9 +178,18 @@ function buildWindow(bounds?: Partial<Rectangle>): BrowserWindow {
       devTools: !app.isPackaged,
       safeDialogs: true,
       autoplayPolicy: 'no-user-gesture-required', // la presentación encadena vídeos con sonido
-      additionalArguments: [`--galeria-theme=${themeId}`, `--galeria-scheme=${scheme}`],
+      additionalArguments: [
+        `--galeria-theme=${themeId}`,
+        `--galeria-scheme=${scheme}`,
+        // Mismo criterio que el modo discreto (nota 135): el renderer sabe que puede exponer sus
+        // ganchos de prueba (§23.2). Nunca en un build empaquetado.
+        ...(stealth ? ['--galeria-test-hooks=1'] : []),
+      ],
     },
   });
+  // Los tests no suenan: el audio se procesa igual (Web Audio, ganancias), pero no sale por los
+  // altavoces del usuario mientras trabaja.
+  if (stealth) win.webContents.setAudioMuted(true);
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

@@ -55,6 +55,7 @@ import { EditedImage } from './EditedImage';
 import { InfoPanel } from './InfoPanel';
 import { clearViewerCache, loadDetail, preloadImages, primeDetail } from './media-cache';
 import { useElementSize } from './use-element-size';
+import { escapeAction } from './viewer-keys';
 import { ZoomPan, type ZoomPanHandle } from './ZoomPan';
 import {
   editedAspect,
@@ -343,6 +344,8 @@ function ViewerDialog() {
   const playerHandles = useRef(new Map<Id, PlayerHandle>());
   const boxes = useRef(new Map<Id, HTMLDivElement>());
   const lastIndex = useRef(0);
+  /** El editor está guardando: Esc no lo cierra (viewer-keys.ts). */
+  const editorSaving = useRef(false);
 
   const ease = parseCubicBezier(theme.def.motion.ease.emphasized);
   const index = currentId ? items.findIndex((i) => i.id === currentId) : -1;
@@ -467,6 +470,7 @@ function ViewerDialog() {
   };
 
   const leaveEditor = (): void => {
+    editorSaving.current = false;
     setMode('view');
     // El editor desaparece con el foco dentro: vuelve al visor.
     queueMicrotask(() => contentRef.current?.focus());
@@ -561,17 +565,33 @@ function ViewerDialog() {
     }
   };
 
-  /** Esc: cancela el editor; si hay zoom, vuelve a ajustar; si no, cierra (§16.1). */
+  /**
+   * Esc: cancela el editor (salvo mientras guarda, viewer-keys.ts); si hay zoom, vuelve a ajustar;
+   * si no, cierra (§16.1).
+   */
   const onEscape = (e: globalThis.KeyboardEvent): void => {
     e.preventDefault();
-    if (phase !== 'open') return;
-    if (mode === 'edit') {
-      leaveEditor();
-      return;
-    }
     const zoom = currentZoom();
-    if (zoom?.isZoomed()) zoom.reset();
-    else requestClose();
+    switch (
+      escapeAction({
+        phase,
+        mode,
+        editorSaving: editorSaving.current,
+        zoomed: zoom?.isZoomed() ?? false,
+      })
+    ) {
+      case 'leave-editor':
+        leaveEditor();
+        break;
+      case 'reset-zoom':
+        zoom?.reset();
+        break;
+      case 'close':
+        requestClose();
+        break;
+      case 'none':
+        break;
+    }
   };
 
   const interactive = phase === 'open';
@@ -741,6 +761,9 @@ function ViewerDialog() {
                 src={mediaUrl(item.id)}
                 onCancel={leaveEditor}
                 onSaved={onSaved}
+                onSavingChange={(saving) => {
+                  editorSaving.current = saving;
+                }}
               />
             </div>
           ) : null}

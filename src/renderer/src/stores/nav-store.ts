@@ -11,7 +11,7 @@ export type ProfilesView =
   | { name: 'create' }
   | { name: 'edit'; profileId: Id };
 
-export type SettingsTab = 'appearance' | 'security' | 'storage';
+export type SettingsTab = 'appearance' | 'security' | 'storage' | 'music' | 'presentation';
 
 interface NavState {
   profilesView: ProfilesView;

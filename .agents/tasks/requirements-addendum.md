@@ -178,3 +178,42 @@ The user has no administrator rights on the Windows machine, so WSL2 is not avai
   - one click opens the viewer; selection uses Ctrl/Shift/checkbox/Space;
   - a damaged video shows the generic "No se puede reproducir este vídeo" message;
   - Esc during an edit save closes the editor (the recommended fix is to ignore Esc while saving; pending).
+
+## 8. Theme change: `album` is replaced by a streaming-style theme (user decision, binding)
+
+The user asked to replace the analog-photo-album theme. They first asked for a cyberpunk theme and then changed their mind: they want a streaming-service look inspired by HBO Max instead. NO cyberpunk. This overrides the `album` row of section 2 and DESIGN.md §15 for that theme only. The other four themes are unchanged.
+
+| id | Visible name | Inspired by | Key traits |
+|---|---|---|---|
+| `cine` | Cine | Streaming apps (HBO Max style) | Dark only. Near-black surfaces with a violet-to-indigo gradient glow at the top. Violet accent with a lighter lavender for accent text; white text. Rounded poster-style cards that scale slightly on focus, with a bottom gradient and the name on a solid label. A top navigation bar. Large rounded profile avatars. One bold, friendly sans-serif. |
+
+**Rules:**
+
+- **Name and legal.**
+  - The visible name stays neutral ("Cine"). The UI never says "HBO", "Max" or "Warner".
+  - Do NOT copy logos, wordmarks, icons, fonts, artwork or sounds from HBO Max, Max, Warner Bros. Discovery or any other service. Everything is created for this project.
+  - Colors are NOT restricted (user ruling): the palette may be as close to the service's as the user likes. A color on its own is not protected for this kind of use.
+  - The font must be OFL and bundled locally: Plus Jakarta Sans. No CDN.
+- **Id rename.**
+  - `album` becomes `cine` in `THEME_IDS`, in the catalog (`schemes: ['dark']` only), in the types (`TitlebarKind` `'album'` → `'cine'`, `BackgroundKind` `'paper'` → `'gradient'`, `TileKind` `'polaroid'` → `'poster'`) and in tests.
+  - The rename is safe because `album` was never available, so no settings file can contain it.
+  - It is done in Phase 6 (task 6.1), NOT now. Phase 4 is still running and must not be disturbed.
+- **Shell.**
+  - A transparent top bar over the gradient that turns solid when the content scrolls. Sections on the left and the profile avatar on the right. It reuses `TopbarShell` with the same `NavModel` and the same screens.
+  - The planner may adjust this, but the shell must not fork functionality.
+  - The gallery stays the same virtualized grid grouped by date, with the same selection, search, filter and sort. Only the tile styling changes.
+  - Optional, only if it forks no function and keeps the same data and actions: show Playlists as horizontal "shelves", one row per playlist with its first thumbnails. The planner decides.
+- **Background.** A static CSS gradient (violet over near-black). No animation, so there is no performance cost and nothing to pause.
+- **Motion.** Short scale and fade transitions of 200 to 250 ms. Under `prefers-reduced-motion`, scaling is replaced by the focus ring only, as in the other themes.
+- **Accessibility.**
+  - Text contrast is at least 4.5:1, and focus rings and component borders at least 3:1, verified by `theme-contrast.test.ts` over the two background extremes.
+  - The violet accent must pass on the dark surfaces for any text; use the lighter lavender where it does not.
+  - The focus ring is clearly visible (white), not only a color change or a scale.
+  - Text over photos always sits on a solid label.
+- **Profile picker (D9).**
+  - This is the closest theme to the user's original "Netflix / HBO Max profile screen" request.
+  - Same structure, DOM order and keyboard behavior as in the other themes.
+  - Variant `showcase`: large rounded avatars on the gradient, the name below, and scale plus a white ring on focus.
+- **Presentation and viewer.** Photo and video content are not tinted by the theme. Only the surrounding chrome is themed, as before.
+- **Verification.** Phase 6 screenshots and the functional keyboard walkthrough cover `cine` like the other themes.
+- **Open choices** (the planner recommends; the user may change later): the exact palette. Recommendation: background #09090F to #151030, accent violet #7C5CFF, lavender text accent #B7A6FF, focus ring white.

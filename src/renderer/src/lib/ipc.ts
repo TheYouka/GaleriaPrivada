@@ -36,3 +36,8 @@ export function on<E extends EventChannel>(
 export function initialTheme(): GaleriaApi['initialTheme'] {
   return api().initialTheme;
 }
+
+/** Ganchos de prueba del renderer (solo sin empaquetar y con GALERIA_E2E=1, §23.2). */
+export function testHooksEnabled(): boolean {
+  return window.galeria.testHooks === true;
+}

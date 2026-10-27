@@ -17,12 +17,18 @@ export interface LibraryFilters {
   search: string;
   dateFrom: string | null;
   dateTo: string | null;
+  /** Filtro de playlist (§14.6): solo los elementos de esa playlist. */
+  playlistId: Id | null;
+  /** Con un filtro de playlist, ordenar como la playlist (position) en vez de por gallerySort. */
+  playlistOrder: boolean;
 }
 
 export const NO_FILTERS: LibraryFilters = Object.freeze({
   search: '',
   dateFrom: null,
   dateTo: null,
+  playlistId: null,
+  playlistOrder: false,
 });
 
 /** Debounce de la recarga tras library:changed (§10.2). */
@@ -57,6 +63,11 @@ export function buildQuery(
   sort: MediaSort,
 ): MediaQuery {
   const query: MediaQuery = { kind, sort };
+  if (filters.playlistId !== null) {
+    query.playlistId = filters.playlistId;
+    // 'position' solo existe con un filtro de playlist (§10.3): no se guarda en prefs.
+    if (filters.playlistOrder) query.sort = { field: 'position', dir: 'asc' };
+  }
   const search = filters.search.trim();
   if (search) query.search = search;
   if (!isDateRangeInvalid(filters)) {
@@ -133,6 +144,11 @@ export function reloadLibrary(): void {
 
 export function setFilters(patch: Partial<LibraryFilters>): void {
   useLibraryStore.setState((s) => ({ filters: { ...s.filters, ...patch } }));
+}
+
+/** Filtra la galería por una playlist (en su orden) o quita ese filtro. */
+export function setPlaylistFilter(playlistId: Id | null): void {
+  setFilters({ playlistId, playlistOrder: playlistId !== null });
 }
 
 export function clearFilters(): void {

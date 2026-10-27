@@ -22,6 +22,13 @@ export function mediaUrl(mediaId: Id): string {
   if (!ID_PATTERN.test(mediaId)) throw new RangeError('mediaId inválido');
   return `vault://media/${mediaId}`;
 }
+
+/** Pista de música de la biblioteca del perfil (en claro, con Range y CORS; §8.6.1 y §11.1). */
+export function musicUrl(trackId: Id): string {
+  if (!ID_PATTERN.test(trackId)) throw new RangeError('trackId inválido');
+  return `vault://music/${trackId}`;
+}
+
 /** Foto de avatar elegida y aún no guardada (token de profiles:pickAvatarPhoto). */
 export function pendingAvatarUrl(token: string): string {
   if (!AVATAR_TOKEN_PATTERN.test(token)) throw new RangeError('token inválido');

@@ -15,8 +15,17 @@ import {
   AVATAR_DIALOG_EXTENSIONS,
   BUILTIN_AVATAR_IDS,
   IMPORT_DIALOG_EXTENSIONS,
+  MUSIC_DIALOG_EXTENSIONS,
 } from '@shared/constants';
-import type { AutoLockMinutes, BuiltinAvatarId, EditOp, LockReason } from '@shared/types';
+import type {
+  AutoLockMinutes,
+  BuiltinAvatarId,
+  EditOp,
+  LockReason,
+  MusicImportResult,
+  MusicTrack,
+  PresentationSettings,
+} from '@shared/types';
 
 /**
  * true si T contiene bytes en algún nivel (Buffer es un Uint8Array). Se distribuye sobre las
@@ -95,6 +104,38 @@ describe('allowlists', () => {
     expectTypeOf<ResOf<'media:get'>['thumbRev']>().toEqualTypeOf<number>();
   });
 
+  it('F4: canales de playlists, música y presentación', () => {
+    const f4 = (prefix: string) => INVOKE_CHANNELS.filter((c) => c.startsWith(prefix)).sort();
+    expect(f4('playlists:')).toEqual([
+      'playlists:addItems',
+      'playlists:create',
+      'playlists:delete',
+      'playlists:list',
+      'playlists:removeItems',
+      'playlists:rename',
+      'playlists:reorder',
+      'playlists:setPresentation',
+    ]);
+    expect(f4('music:')).toEqual(['music:delete', 'music:import', 'music:list', 'music:rename']);
+    expect(f4('presentation:')).toEqual(['presentation:getConfig', 'presentation:saveDefaults']);
+    // music:import no acepta rutas del renderer: el diálogo nativo está en main.
+    expectTypeOf<ReqOf<'music:import'>>().toEqualTypeOf<undefined>();
+    expectTypeOf<ResOf<'music:import'>>().toEqualTypeOf<MusicImportResult | null>();
+    expectTypeOf<ReqOf<'playlists:addItems'>>().toEqualTypeOf<{ id: string; mediaIds: string[] }>();
+    expectTypeOf<ResOf<'playlists:addItems'>>().toEqualTypeOf<{
+      added: number;
+      alreadyPresent: number;
+    }>();
+    expectTypeOf<ReqOf<'playlists:setPresentation'>>().toEqualTypeOf<{
+      id: string;
+      settings: PresentationSettings | null;
+    }>();
+    expectTypeOf<ResOf<'presentation:getConfig'>>().toEqualTypeOf<{
+      settings: PresentationSettings;
+      tracks: MusicTrack[];
+    }>();
+  });
+
   it('[H3-8] los canales de la bóveda no aceptan rutas del renderer', () => {
     expectTypeOf<ReqOf<'vault:relocate'>>().toEqualTypeOf<{ target: 'choose' | 'default' }>();
     expectTypeOf<ReqOf<'vault:locate'>>().toEqualTypeOf<{ profileId: string }>();
@@ -155,6 +196,12 @@ describe('constantes', () => {
 
   it('AUTO_LOCK_MINUTES cubre exactamente AutoLockMinutes', () => {
     expectTypeOf<(typeof AUTO_LOCK_MINUTES)[number]>().toEqualTypeOf<AutoLockMinutes>();
+  });
+
+  it('el diálogo de música ofrece solo los formatos de §8.6.1', () => {
+    expect([...MUSIC_DIALOG_EXTENSIONS].sort()).toEqual(
+      ['aac', 'flac', 'm4a', 'mp3', 'ogg', 'opus', 'wav'].sort(),
+    );
   });
 
   it('los diálogos no ofrecen BMP, HEIC ni RAW', () => {

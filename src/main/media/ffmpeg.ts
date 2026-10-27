@@ -25,8 +25,8 @@ import { log } from '../log';
 
 export type FfmpegTool = 'ffmpeg' | 'ffprobe';
 
-/** Demuxers que se fuerzan con `-f` (§12.4 paso 0, §19.4). F4 añade los de música. */
-export const DEMUXERS = ['mov', 'matroska', 'avi'] as const;
+/** Demuxers que se fuerzan con `-f` (§12.4 paso 0, §19.4) y los de música de §8.6.1 (F4). */
+export const DEMUXERS = ['mov', 'matroska', 'avi', 'mp3', 'aac', 'ogg', 'flac', 'wav'] as const;
 export type Demuxer = (typeof DEMUXERS)[number];
 
 /** Timeouts de §19.4. Conversión y fusión no tienen timeout (son cancelables). */

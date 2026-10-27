@@ -19,6 +19,10 @@ import type {
   MediaDetail,
   MediaListItem,
   MediaQuery,
+  MusicImportResult,
+  MusicTrack,
+  PlaylistSummary,
+  PresentationSettings,
   ProfilePrefs,
   ProfileSummary,
   RelocateDone,
@@ -68,6 +72,20 @@ export const INVOKE_CHANNELS = [
   'vault:relocateCancel',
   'vault:locate',
   'edits:save',
+  'playlists:list',
+  'playlists:create',
+  'playlists:rename',
+  'playlists:delete',
+  'playlists:addItems',
+  'playlists:removeItems',
+  'playlists:reorder',
+  'playlists:setPresentation',
+  'music:import',
+  'music:list',
+  'music:rename',
+  'music:delete',
+  'presentation:getConfig',
+  'presentation:saveDefaults',
 ] as const;
 
 /**
@@ -204,6 +222,65 @@ interface InvokeMap {
     req: { mediaId: Id; ops: EditOp[] };
     res: { edits: EditOp[]; thumbRev: number };
   };
+
+  // ── Playlists (§10.2, §14.8). Todo vive en la DB cifrada. ──────────────────────────────────
+  /** U. Ordenadas por nombre (colación española natural). `coverMediaId`: el primer elemento. */
+  'playlists:list': { req: undefined; res: PlaylistSummary[] };
+  /** U. Nombre 1–100 code points (no tiene que ser único). */
+  'playlists:create': { req: { name: string }; res: PlaylistSummary };
+  /** U. NOT_FOUND si no existe. */
+  'playlists:rename': { req: { id: Id; name: string }; res: PlaylistSummary };
+  /** U. Borra la playlist, nunca los medios. NOT_FOUND si no existe. */
+  'playlists:delete': { req: { id: Id }; res: void };
+  /**
+   * U. Añade al final, en el orden recibido. Los que ya están cuentan en `alreadyPresent` y los que
+   * ya no existen se ignoran. PLAYLIST_FULL (sin añadir nada) si pasaría de 2000. NOT_FOUND si la
+   * playlist no existe.
+   */
+  'playlists:addItems': {
+    req: { id: Id; mediaIds: Id[] };
+    res: { added: number; alreadyPresent: number };
+  };
+  /** U. Las posiciones se vuelven a numerar sin huecos. NOT_FOUND si la playlist no existe. */
+  'playlists:removeItems': { req: { id: Id; mediaIds: Id[] }; res: { removed: number } };
+  /** U. Permutación exacta de los elementos actuales (si no, VALIDATION). */
+  'playlists:reorder': { req: { id: Id; mediaIds: Id[] }; res: void };
+  /**
+   * U. Ajustes propios de la playlist (§10.2): `presentation_json` sin `trackIds` y las pistas en
+   * playlist_music, en orden; `null` vuelve a los predeterminados y borra sus pistas. NOT_FOUND si
+   * la playlist o alguna pista no existe.
+   */
+  'playlists:setPresentation': {
+    req: { id: Id; settings: PresentationSettings | null };
+    res: void;
+  };
+
+  // ── Música (§8.6.1). Archivos en claro en music/ con nombre neutro; títulos en la DB. ─────
+  /**
+   * U. Diálogo nativo en main (multiselección); null si se cancela. Copia (nunca mueve ni toca el
+   * original). BUSY con otra importación de música o durante un traslado; VALIDATION con más de 200
+   * archivos.
+   */
+  'music:import': { req: undefined; res: MusicImportResult | null };
+  /** U. */
+  'music:list': { req: undefined; res: MusicTrack[] };
+  /** U. Título 1–200 code points. NOT_FOUND si no existe. */
+  'music:rename': { req: { id: Id; title: string }; res: MusicTrack };
+  /** U. Quita la pista de las playlists y de las pistas por defecto y borra su archivo. */
+  'music:delete': { req: { id: Id }; res: void };
+
+  // ── Presentación (§10.2, §17.2) ───────────────────────────────────────────────────────────
+  /**
+   * U. Ajustes efectivos: los de la playlist si los tiene; si no (o sin playlistId), los
+   * predeterminados. `tracks` son las pistas que existen, en el orden de `settings.trackIds`.
+   * NOT_FOUND si la playlist no existe.
+   */
+  'presentation:getConfig': {
+    req: { playlistId?: Id };
+    res: { settings: PresentationSettings; tracks: MusicTrack[] };
+  };
+  /** U. prefs.presentationDefaults (en claro) y kv['presentation.defaultTracks'] (cifrado). */
+  'presentation:saveDefaults': { req: { settings: PresentationSettings }; res: void };
 }
 
 /** Payload de cada evento (main → renderer, solo a la ventana actual). */
@@ -260,4 +337,10 @@ export interface GaleriaApi {
   importDropped(files: File[]): Promise<Result<{ jobId: Id }>>;
   /** Leído de process.argv (--galeria-theme, --galeria-scheme). */
   readonly initialTheme: { themeId: ThemeId; scheme: 'light' | 'dark' };
+  /**
+   * Solo true con `!app.isPackaged && GALERIA_E2E=1` (main pasa `--galeria-test-hooks=1`): el
+   * renderer expone entonces los atributos y el getter de estado de la presentación (§23.2). Nunca
+   * lleva datos de la bóveda.
+   */
+  readonly testHooks: boolean;
 }

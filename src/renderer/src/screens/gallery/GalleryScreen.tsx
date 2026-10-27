@@ -1,6 +1,7 @@
 // Galería (docs/DESIGN.md §14.6): cabecera con el recuento, chips de filtros, barra de selección y
 // la rejilla virtualizada. El tipo sale de la entrada activa del NavModel (Todo / Fotos / Vídeos), el
 // orden y el tamaño de las preferencias del perfil y la búsqueda se aplica con un debounce de 200 ms.
+// Con un filtro de playlist (§14.6) la rejilla puede seguir el orden de la playlist.
 import { useEffect, useMemo } from 'react';
 import { FolderOpen, Upload } from 'lucide-react';
 import type { MediaSort } from '@shared/types';
@@ -91,10 +92,25 @@ export function GalleryScreen() {
     () =>
       buildQuery(
         kind,
-        { search, dateFrom: filters.dateFrom, dateTo: filters.dateTo },
+        {
+          search,
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          playlistId: filters.playlistId,
+          playlistOrder: filters.playlistOrder,
+        },
         { field: sort.field, dir: sort.dir },
       ),
-    [kind, search, filters.dateFrom, filters.dateTo, sort.field, sort.dir],
+    [
+      kind,
+      search,
+      filters.dateFrom,
+      filters.dateTo,
+      filters.playlistId,
+      filters.playlistOrder,
+      sort.field,
+      sort.dir,
+    ],
   );
   useEffect(() => setLibraryQuery(query), [query]);
 
@@ -102,7 +118,9 @@ export function GalleryScreen() {
     kind !== 'all' ||
     query.search !== undefined ||
     query.dateFrom !== undefined ||
-    query.dateTo !== undefined;
+    query.dateTo !== undefined ||
+    query.playlistId !== undefined;
+  const playlistOrder = filters.playlistId !== null && filters.playlistOrder;
   const title = navLabel(NAV_MODEL, active);
   const count = items.length === 1 ? '1 elemento' : `${items.length} elementos`;
 
@@ -123,7 +141,11 @@ export function GalleryScreen() {
             <Button onClick={reloadLibrary}>Reintentar</Button>
           </div>
         ) : items.length > 0 ? (
-          <GalleryGrid items={items} size={size} grouping={groupingOf(sort)} />
+          <GalleryGrid
+            items={items}
+            size={size}
+            grouping={playlistOrder ? null : groupingOf(sort)}
+          />
         ) : status === 'ready' ? (
           <EmptyState filtered={filtered} />
         ) : (

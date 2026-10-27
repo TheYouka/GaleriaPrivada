@@ -277,6 +277,66 @@ export function writeLongVideo(path: string, seconds: number): void {
   );
 }
 
+/**
+ * Pista de música sintética (tono de 440 Hz) con el ffmpeg empaquetado, para los E2E de música y de
+ * la presentación (PLAN.md 4.2, 4.7). Nunca se usa música real; solo existe en `tests/.tmp/`.
+ */
+export function writeTone(path: string, seconds: number, format: 'wav' | 'mp3' = 'wav'): void {
+  const win = process.platform === 'win32';
+  const dir = join(ROOT, 'resources', 'ffmpeg', win ? 'win-x64' : 'linux-x64');
+  const codec =
+    format === 'mp3'
+      ? ['-c:a', 'libmp3lame', '-b:a', '64k', '-f', 'mp3']
+      : ['-c:a', 'pcm_s16le', '-f', 'wav'];
+  execFileSync(
+    join(dir, 'bin', win ? 'ffmpeg.exe' : 'ffmpeg'),
+    [
+      ...['-hide_banner', '-nostdin', '-v', 'error', '-y'],
+      ...['-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=44100:duration=${seconds}`],
+      ...codec,
+      path,
+    ],
+    {
+      env: win
+        ? { SystemRoot: process.env.SystemRoot ?? 'C:\\Windows' }
+        : { LD_LIBRARY_PATH: join(dir, 'lib') },
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 60_000,
+    },
+  );
+}
+
+/** Pista importada (forma de MusicTrack). */
+export interface ImportedTrack {
+  id: string;
+  title: string;
+  durationMs: number | null;
+  sizeBytes: number;
+}
+
+/**
+ * Importa música por el camino real de main (`music:import` con el diálogo nativo simulado) y
+ * devuelve el resultado. La UI de Ajustes → Música (PLAYLISTS-UI) usa el mismo canal.
+ */
+export async function importMusic(
+  app: ElectronApplication,
+  page: Page,
+  paths: string[],
+): Promise<{ imported: ImportedTrack[]; failed: { name: string; code: string }[] }> {
+  await mockOpenDialog(app, paths);
+  const res = await page.evaluate(async () => {
+    const api = (
+      window as unknown as {
+        galeria: { invoke(c: string): Promise<{ ok: boolean; data?: unknown; error?: unknown }> };
+      }
+    ).galeria;
+    return api.invoke('music:import');
+  });
+  if (!res.ok) throw new Error(`music:import falló: ${JSON.stringify(res.error)}`);
+  return res.data as { imported: ImportedTrack[]; failed: { name: string; code: string }[] };
+}
+
 /** Escribe un JPEG/PNG sintético y único (color de fondo distinto) con sharp, sin EXIF. */
 export async function writePhoto(
   path: string,

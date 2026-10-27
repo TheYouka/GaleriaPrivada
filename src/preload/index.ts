@@ -62,6 +62,7 @@ const api: GaleriaApi = {
     return ipcRenderer.invoke('import:paths', req) as Promise<Result<{ jobId: Id }>>;
   },
   initialTheme: readInitialTheme(),
+  testHooks: readArg('galeria-test-hooks') === '1',
 };
 
 contextBridge.exposeInMainWorld('galeria', api);

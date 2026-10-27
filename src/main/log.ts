@@ -106,6 +106,13 @@ export const LOG_EVENTS = [
   'reconcile.thumb-failed',
   'reconcile.sweep-failed',
   'reconcile.orphans-erased',
+  'reconcile.music',
+  // Música y presentación (§8.6.1, §10.2; F4)
+  'music.imported',
+  'music.failed',
+  'music.probe-failed',
+  'music.unlink-failed',
+  'presentation.invalid-json',
   // Edición y regeneración de miniaturas (§16.5)
   'edit.saved',
   'edit.failed',

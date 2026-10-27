@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { AppErrorException, type ErrorCode } from '@shared/errors';
 import { AUTO_LOCK_MINUTES, ID_PATTERN, PRESENTATION_LIMITS } from '@shared/constants';
+import { DEFAULT_PRESENTATION } from '@shared/presentation';
 import { THEME_IDS } from '@shared/themes';
 import type { GlobalSettings, Id, ProfilePrefs } from '@shared/types';
 import { log } from '../log';
@@ -274,6 +275,8 @@ export const PRESENTATION_PLAIN_SCHEMA = z.strictObject({
     .max(PRESENTATION_LIMITS.slideMsMax)
     .multipleOf(PRESENTATION_LIMITS.slideMsStep),
   loop: z.boolean(),
+  // Con `default`, los ajustes guardados antes de este campo siguen siendo válidos.
+  animations: z.boolean().default(true),
   startFullscreen: z.boolean(),
   audioMode: z.enum(['video', 'music', 'both', 'mute']),
   musicEnabled: z.boolean(),
@@ -319,18 +322,10 @@ export const DEFAULT_PREFS: Readonly<ProfilePrefs> = Object.freeze<ProfilePrefs>
   contentProtection: true,
   gridSize: 'medium',
   gallerySort: { field: 'captured', dir: 'desc' },
+  // §8.4 / §17.2 (src/shared/presentation.ts); copia propia para que nadie comparta el array.
   presentationDefaults: {
-    transition: 'fade',
-    randomPool: ['fade', 'slide', 'zoom', 'kenburns'],
-    transitionMs: 700,
-    slideMs: 5000,
-    loop: true,
-    startFullscreen: true,
-    audioMode: 'video',
-    musicEnabled: false,
-    musicVolume: 0.7,
-    videoVolume: 1.0,
-    musicFadeMs: 1500,
+    ...DEFAULT_PRESENTATION,
+    randomPool: [...DEFAULT_PRESENTATION.randomPool],
   },
 });
 

@@ -1,7 +1,7 @@
 // Protocolo vault:// (docs/DESIGN.md §11):
 //   vault://media/<mediaId>              objeto almacenado, descifrado al vuelo (requiere desbloqueo)
 //   vault://thumb/<mediaId>?rev=<n>      miniatura WebP (se busca thumb_id; requiere desbloqueo)
-//   vault://music/<trackId>              F4: hasta entonces 423 bloqueada y 404 abierta
+//   vault://music/<trackId>              pista de music/ en claro (F4; requiere desbloqueo)
 //   vault://avatar/<profileId>?rev=<n>   avatars/<profileId>.webp, en claro, sin desbloqueo
 //   vault://avatar/pending/<token>       WebP elegido y aún no guardado (en memoria, 10 min)
 //
@@ -11,7 +11,9 @@
 // §11.5: cada stream abierto escucha la señal de la sesión, que se aborta en el paso 2 del bloqueo,
 // y termina con controller.error(); el paso 4 pone a cero la DEK de su lector (registerReader).
 // Nada descifrado se escribe en disco: los bytes van del lector al ReadableStream de la respuesta.
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { lstat, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { Session } from 'electron';
 import { AVATAR_TOKEN_PATTERN, ID_PATTERN } from '@shared/constants';
@@ -20,10 +22,12 @@ import type { Id } from '@shared/types';
 import { KIND_MEDIA, KIND_THUMB, type ObjectKind } from '../crypto/file-format';
 import { openObject, type ObjectReader } from '../crypto/object-reader';
 import { findReady } from '../db/repos/media-repo';
+import { findTrackFile } from '../db/repos/music-repo';
 import { log } from '../log';
+import { MUSIC_FILE_NAME } from '../music/music-sniff';
 import type { SessionManager } from '../session/session-manager';
 import { fileIdOf } from '../vault/object-store';
-import { objectPath, thumbPath } from '../vault/vault-layout';
+import { objectPath, thumbPath, vaultPaths } from '../vault/vault-layout';
 import { contentRange, parseRange, unsatisfiedRange } from './range';
 
 /** Objeto cifrado que corresponde a una URL media|thumb con fila `ready`. */
@@ -64,6 +68,22 @@ export interface VaultProtocolDeps {
   inMaintenance?(): boolean;
   /** media y thumb. Sin fuente, 404 (solo tests de F1). */
   objects?: VaultObjectSource;
+  /** music (F4). Sin fuente, 404. */
+  music?: MusicFileSource;
+}
+
+/** Pista de music/ (en claro) que corresponde a una URL vault://music/<trackId>. */
+export interface MusicFile {
+  path: string;
+  mime: string;
+  /** Señal de la sesión: se aborta en el paso 2 del bloqueo (§11.5). */
+  signal: AbortSignal;
+}
+
+/** Acceso a las pistas de la sesión desbloqueada. */
+export interface MusicFileSource {
+  /** Fila de music_tracks; null si no existe. LOCKED si se bloqueó. */
+  find(trackId: Id): MusicFile | null;
 }
 
 const HOSTS: ReadonlySet<string> = new Set(['media', 'thumb', 'music', 'avatar']);
@@ -116,8 +136,8 @@ function errnoOf(err: unknown): string | undefined {
  */
 function lockableBody(
   node: Readable,
-  opened: OpenedVaultObject,
-  mediaId: Id,
+  opened: Pick<OpenedVaultObject, 'signal' | 'release'>,
+  mediaId: Id | undefined,
 ): ReadableStream<Uint8Array> {
   const it = node[Symbol.asyncIterator]() as AsyncIterator<Buffer>;
   let finished = false;
@@ -249,6 +269,80 @@ async function serveObject(
   return new Response(lockableBody(node, opened, mediaId), { status, headers });
 }
 
+/**
+ * vault://music/<trackId> (§8.6.1, §11): el archivo en claro de music/ con el MIME de
+ * music_tracks, Range de §11.2 y las mismas cabeceras (CORS: `MediaElementSource` de Web Audio en
+ * la presentación lo necesita, §17.8). Requiere desbloqueo; el stream termina con error al
+ * bloquear (§11.5).
+ */
+async function serveMusic(
+  request: Request,
+  trackId: Id,
+  deps: VaultProtocolDeps,
+  origin: string,
+): Promise<Response> {
+  if (!deps.isUnlocked()) return errorResponse(423, 'LOCKED', origin);
+  if (deps.inMaintenance?.()) return errorResponse(503, 'BUSY', origin);
+  const source = deps.music;
+  if (!source) return errorResponse(404, 'NOT_FOUND', origin);
+  let file: MusicFile | null;
+  try {
+    file = source.find(trackId);
+  } catch (err) {
+    if (!deps.isUnlocked() || codeOf(err) === 'LOCKED') return errorResponse(423, 'LOCKED', origin);
+    log.error('protocol.io', { errno: errnoOf(err), stage: 'lookup' });
+    return errorResponse(500, 'INTERNAL', origin);
+  }
+  if (!file) {
+    log.debug('protocol.rejected', { stage: 'not-found' });
+    return errorResponse(404, 'NOT_FOUND', origin);
+  }
+  let size: number;
+  try {
+    const st = await lstat(file.path);
+    if (!st.isFile()) throw Object.assign(new Error('not a file'), { code: 'ENOENT' });
+    size = st.size;
+  } catch (err) {
+    if (errnoOf(err) === 'ENOENT') {
+      log.warn('protocol.not-found', { stage: 'music' }); // existe la fila pero falta el archivo
+      return errorResponse(404, 'NOT_FOUND', origin);
+    }
+    log.error('protocol.io', { errno: errnoOf(err), stage: 'music' });
+    return errorResponse(500, 'IO', origin);
+  }
+  if (file.signal.aborted || !deps.isUnlocked()) return errorResponse(423, 'LOCKED', origin);
+
+  const range = parseRange(request.headers.get('range'), size);
+  if (range.kind === 'unsatisfiable') {
+    log.debug('protocol.rejected', { stage: 'range' });
+    return errorResponse(416, null, origin, {
+      'Content-Range': unsatisfiedRange(size),
+      'Access-Control-Expose-Headers': EXPOSE,
+    });
+  }
+  const start = range.kind === 'partial' ? range.start : 0;
+  const end = range.kind === 'partial' ? range.end : size - 1;
+  const length = size === 0 ? 0 : end - start + 1;
+  const headers: Record<string, string> = {
+    ...baseHeaders(origin),
+    'Content-Type': file.mime,
+    'Content-Length': String(length),
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Expose-Headers': EXPOSE,
+  };
+  if (range.kind === 'partial') headers['Content-Range'] = contentRange(start, end, size);
+  const status = range.kind === 'partial' ? 206 : 200;
+  if (request.method === 'HEAD' || length === 0) return new Response(null, { status, headers });
+  const node = createReadStream(file.path, { start, end });
+  return new Response(
+    lockableBody(node, { signal: file.signal, release: () => undefined }, undefined),
+    {
+      status,
+      headers,
+    },
+  );
+}
+
 /** Manejador puro (se prueba con Request de Node). */
 export async function handleVaultRequest(
   request: Request,
@@ -283,9 +377,11 @@ export async function handleVaultRequest(
   }
 
   if (url.host === 'music') {
-    // F4.
-    if (!deps.isUnlocked()) return errorResponse(423, 'LOCKED', origin);
-    return errorResponse(404, 'NOT_FOUND', origin);
+    if (segments.length !== 1 || !ID_PATTERN.test(segments[0] as string)) {
+      log.debug('protocol.rejected', { stage: 'id' });
+      return errorResponse(400, 'VALIDATION', origin);
+    }
+    return serveMusic(request, segments[0] as string, deps, origin);
   }
 
   if (segments.length === 2 && segments[0] === 'pending') {
@@ -372,6 +468,27 @@ export function sessionObjectSource(session: SessionLike): VaultObjectSource {
           unregister();
           void reader.close();
         },
+      };
+    },
+  };
+}
+
+/**
+ * Pistas de la sesión actual: la fila con getDb(epoch) y la ruta music/<file_name> de la bóveda de
+ * la sesión. El nombre del archivo sale de la DB, pero solo se usa si tiene la forma `<id>.<ext>`.
+ */
+export function sessionMusicSource(
+  session: Pick<SessionManager, 'epoch' | 'getDb' | 'getVaultDir' | 'getSessionSignal'>,
+): MusicFileSource {
+  return {
+    find(trackId) {
+      const epoch = session.epoch;
+      const row = findTrackFile(session.getDb(epoch), trackId);
+      if (!row || !MUSIC_FILE_NAME.test(row.fileName)) return null;
+      return {
+        path: join(vaultPaths(session.getVaultDir(epoch)).music, row.fileName),
+        mime: row.mime,
+        signal: session.getSessionSignal(epoch),
       };
     },
   };

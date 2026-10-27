@@ -123,6 +123,39 @@ describe('SCHEMAS', () => {
     expect(schema.safeParse({ contentProtection: 'sí' }).success).toBe(false);
   });
 
+  it('F4: playlists (nombres 1–100, [H3-4] hasta 100 000 ids, reorder ≤ 2000) y música', () => {
+    const create = SCHEMAS['playlists:create'];
+    expect(create.parse({ name: '  Vacaciones  ' })).toEqual({ name: 'Vacaciones' });
+    for (const name of ['', '   ', 'a'.repeat(101), 'a\u0007b']) {
+      expect(create.safeParse({ name }).success).toBe(false);
+    }
+    expect(create.safeParse({ name: 'a'.repeat(100) }).success).toBe(true);
+    const add = SCHEMAS['playlists:addItems'];
+    const many = Array.from({ length: 100_000 }, (_, i) => i.toString(16).padStart(32, '0'));
+    expect(add.safeParse({ id: id(), mediaIds: many }).success).toBe(true);
+    expect(add.safeParse({ id: id(), mediaIds: [...many, id()] }).success).toBe(false);
+    expect(add.safeParse({ id: id(), mediaIds: [] }).success).toBe(false);
+    const dup = id();
+    expect(
+      SCHEMAS['playlists:removeItems'].safeParse({ id: id(), mediaIds: [dup, dup] }).success,
+    ).toBe(false);
+    const reorder = SCHEMAS['playlists:reorder'];
+    expect(reorder.safeParse({ id: id(), mediaIds: [] }).success).toBe(true);
+    expect(reorder.safeParse({ id: id(), mediaIds: many.slice(0, 2000) }).success).toBe(true);
+    expect(reorder.safeParse({ id: id(), mediaIds: many.slice(0, 2001) }).success).toBe(false);
+    expect(reorder.safeParse({ id: id(), mediaIds: [dup, dup] }).success).toBe(false);
+    expect(SCHEMAS['music:import'].safeParse(undefined).success).toBe(true);
+    expect(SCHEMAS['music:import'].safeParse({ paths: ['C:\\x.mp3'] }).success).toBe(false);
+    expect(SCHEMAS['music:rename'].safeParse({ id: id(), title: 'a'.repeat(200) }).success).toBe(
+      true,
+    );
+    expect(SCHEMAS['music:rename'].safeParse({ id: id(), title: 'a'.repeat(201) }).success).toBe(
+      false,
+    );
+    expect(SCHEMAS['presentation:getConfig'].safeParse({}).success).toBe(true);
+    expect(SCHEMAS['presentation:getConfig'].safeParse({ playlistId: 'x' }).success).toBe(false);
+  });
+
   it('settings:set y session:*', () => {
     expect(SCHEMAS['settings:set'].safeParse({ pickerThemeId: 'ps3' }).success).toBe(true);
     expect(SCHEMAS['settings:set'].safeParse({ pickerThemeId: 'otro' }).success).toBe(false);

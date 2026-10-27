@@ -231,6 +231,12 @@ export interface PresentationPlainSettings {
   transitionMs: number;
   slideMs: number;
   loop: boolean;
+  /**
+   * «Animaciones» del diálogo de inicio: si es false, la transición `kenburns` se queda en el
+   * fundido (las otras tres cosas que se pueden apagar son `transition: 'none'`, `musicEnabled` y
+   * `loop`). PLAN.md nota 178.
+   */
+  animations: boolean;
   startFullscreen: boolean;
   audioMode: AudioMode;
   musicEnabled: boolean;

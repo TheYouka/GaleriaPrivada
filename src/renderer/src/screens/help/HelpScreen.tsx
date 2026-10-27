@@ -21,6 +21,19 @@ export function HelpScreen() {
         </p>
       </section>
 
+      <section aria-labelledby="help-playlists" className="flex flex-col gap-2">
+        <h2 id="help-playlists" className="text-xl font-semibold text-text">
+          Playlists y música
+        </h2>
+        <p className="text-text-muted">
+          Selecciona fotos y vídeos en la galería y elige «Añadir a playlist». Las playlists se
+          cifran con el resto de la bóveda. La música (Ajustes → Música) se copia a la carpeta del
+          perfil sin cifrar y con un nombre neutro; el archivo original no se borra. La copia es
+          idéntica, así que conserva las etiquetas del archivo (título, artista, portada), que se
+          pueden leer.
+        </p>
+      </section>
+
       <section aria-labelledby="help-limits" className="flex flex-col gap-3">
         <h2 id="help-limits" className="text-xl font-semibold text-text">
           Límites

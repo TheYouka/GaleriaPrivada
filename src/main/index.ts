@@ -11,6 +11,10 @@ import { registerAppHandlers } from './ipc/handlers/app';
 import { registerEditsHandlers } from './ipc/handlers/edits';
 import { importPathsFromTest, registerImportHandlers } from './ipc/handlers/import';
 import { registerMediaHandlers } from './ipc/handlers/media';
+import { registerMusicHandlers } from './ipc/handlers/music';
+import { registerPlaylistHandlers } from './ipc/handlers/playlists';
+import { registerPresentationHandlers } from './ipc/handlers/presentation';
+import { MusicService } from './music/music-service';
 import { registerVaultHandlers } from './ipc/handlers/vault';
 import { LibraryEvents } from './ipc/library-events';
 import { registerProfileHandlers } from './ipc/handlers/profiles';
@@ -25,7 +29,11 @@ import { ProfileService } from './profiles/profile-service';
 import { ProfileStore, vaultDirOf } from './profiles/profile-store';
 import { registerAppProtocol } from './protocol/app-protocol';
 import { registerSchemesAsPrivileged } from './protocol/schemes';
-import { registerVaultProtocol, sessionObjectSource } from './protocol/vault-protocol';
+import {
+  registerVaultProtocol,
+  sessionMusicSource,
+  sessionObjectSource,
+} from './protocol/vault-protocol';
 import { installDevCsp } from './security/csp';
 import { installWebContentsGuards } from './security/navigation-guard';
 import {
@@ -255,6 +263,10 @@ function start(): void {
       const inFlight = new InFlight();
       // Edición no destructiva (§16.5): miniatura nueva por objeto nuevo, con el mismo inFlight.
       registerEditsHandlers({ session: sessionManager, inFlight, library: libraryEvents });
+      // Playlists, música y ajustes de la presentación (F4): todo en la DB cifrada salvo los
+      // archivos de música (en claro, con nombre neutro) y la parte en claro de prefs.
+      registerPlaylistHandlers({ session: sessionManager, library: libraryEvents });
+      registerPresentationHandlers({ session: sessionManager, prefs });
 
       // Traslado de la bóveda y disco ausente (§8.7) y reconciliación al desbloquear (§12.6).
       const relocate: RelocateService = new RelocateService({
@@ -321,6 +333,14 @@ function start(): void {
           return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
         },
       });
+      registerMusicHandlers({
+        service: new MusicService({ session: sessionManager, ffmpeg, inFlight }),
+        session: sessionManager,
+        showOpenDialog: (options) => {
+          const win = getMainWindow();
+          return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
+        },
+      });
       registerVaultProtocol(ses, {
         avatarFile: (id) => avatarFilePath(dataRoot, id),
         pendingAvatar: (token) => tokens.peek(token),
@@ -328,6 +348,7 @@ function start(): void {
         isUnlocked: () => sessionManager.isUnlocked,
         inMaintenance: () => sessionManager.inMaintenance,
         objects: sessionObjectSource(sessionManager),
+        music: sessionMusicSource(sessionManager),
       });
       installLockTriggers(sessionManager, { app, powerMonitor, dialog });
 

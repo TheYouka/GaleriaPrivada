@@ -280,15 +280,22 @@ test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () =>
   await expect(cells.nth(0)).toBeFocused();
   await page.keyboard.press('Escape');
 
-  // Presentación y Vídeo dual no están disponibles todavía: deshabilitados con su tooltip.
+  // «Presentación» abre el diálogo de inicio (Fase 4); «Vídeo dual» no está disponible todavía:
+  // deshabilitado con su tooltip.
   await cells.nth(0).click({ modifiers: ['Control'] });
   const presentation = page.getByRole('button', { name: 'Presentación' });
-  await expect(presentation).toHaveAttribute('aria-disabled', 'true');
-  await presentation.focus();
+  await expect(presentation).not.toHaveAttribute('aria-disabled', 'true');
+  const dual = page
+    .getByRole('region', { name: 'Selección' })
+    .getByRole('button', { name: 'Vídeo dual' });
+  await presentation.click();
+  const setup = page.getByRole('dialog', { name: 'Presentación' });
+  await expect(setup).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(setup).toBeHidden();
+  await expect(dual).toHaveAttribute('aria-disabled', 'true');
+  await dual.focus();
   await expect(page.getByRole('tooltip', { name: 'Disponible próximamente' })).toBeVisible();
-  await expect(
-    page.getByRole('region', { name: 'Selección' }).getByRole('button', { name: 'Vídeo dual' }),
-  ).toHaveAttribute('aria-disabled', 'true');
   await page.keyboard.press('Escape');
   await cells.nth(0).click({ modifiers: ['Control'] });
   await page.keyboard.press('Escape');

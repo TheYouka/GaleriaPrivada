@@ -8,6 +8,7 @@ import {
   openSync,
   closeSync,
   readFileSync,
+  rmSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
@@ -15,11 +16,20 @@ import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { KIND_MEDIA, KIND_THUMB } from '../../../src/main/crypto/file-format';
 import {
+  KV_DEFAULT_TRACKS,
   importReplaceKey,
   kvGet,
+  kvSet,
   listImportReplacements,
 } from '../../../src/main/db/repos/kv-repo';
 import { insertReplacing } from '../../../src/main/db/repos/media-repo';
+import { insertTrack, listTrackFiles } from '../../../src/main/db/repos/music-repo';
+import {
+  createPlaylist,
+  playlistPresentation,
+  setPlaylistPresentation,
+} from '../../../src/main/db/repos/playlist-repo';
+import { DEFAULT_PRESENTATION } from '../../../src/shared/presentation';
 import { log } from '../../../src/main/log';
 import { getSharp } from '../../../src/main/media/sharp-loader';
 import { InFlight } from '../../../src/main/vault/in-flight';
@@ -343,6 +353,7 @@ describe('punto 3: miniaturas ausentes [H3-7]', () => {
         calls.lstat.push(p);
         return defaultReconcileIo.lstat(p);
       },
+      unlink: (p) => defaultReconcileIo.unlink(p),
     };
     const report = await reconciler(h, { io }).run(ctxOf(h));
 
@@ -503,5 +514,103 @@ describe('enganche al desbloqueo (paso 6)', () => {
     await holder.r.pauseBackground();
     holder.r.resumeBackground();
     await holder.r.backgroundIdle();
+  });
+});
+
+describe('punto 5: música (§8.6.1)', () => {
+  function track(h: ImportHarness, opts: { file?: boolean; part?: boolean } = {}): string {
+    const id = newId();
+    insertTrack(h.db(), {
+      id,
+      fileName: `${id}.mp3`,
+      title: `pista ${id.slice(0, 4)}`,
+      ext: 'mp3',
+      mime: 'audio/mpeg',
+      sizeBytes: 100,
+      durationMs: null,
+      importedAt: 1,
+    });
+    if (opts.file !== false)
+      writeFileSync(join(h.vaultDir, 'music', `${id}.mp3`), randomBytes(100));
+    return id;
+  }
+
+  it('borra .part y archivos sin fila; borra filas sin archivo y las quita de kv y de las playlists', async () => {
+    const h = await harness();
+    const music = join(h.vaultDir, 'music');
+    const kept = track(h);
+    const lost = track(h, { file: false });
+    const orphan = `${newId()}.flac`;
+    writeFileSync(join(music, orphan), randomBytes(50));
+    const part = `${newId()}.wav.part`;
+    writeFileSync(join(music, part), randomBytes(50));
+    // Archivos ajenos (no los crea la app) y una carpeta con nombre de pista: no se tocan.
+    writeFileSync(join(music, 'desktop.ini'), 'x');
+    writeFileSync(join(music, 'canción.mp3'), 'x');
+    const dirLike = `${newId()}.ogg`;
+    mkdirSync(join(music, dirLike));
+
+    kvSet(h.db(), KV_DEFAULT_TRACKS, [lost, kept, newId()]);
+    const pl = createPlaylist(h.db(), 'P');
+    setPlaylistPresentation(h.db(), pl.id, {
+      plain: { ...DEFAULT_PRESENTATION },
+      trackIds: [lost, kept],
+    });
+
+    const report = await reconciler(h).run(ctxOf(h));
+
+    expect(report).toMatchObject({
+      musicPartsRemoved: 1,
+      musicOrphansRemoved: 1,
+      musicRowsDropped: 1,
+    });
+    expect(existsSync(join(music, `${kept}.mp3`))).toBe(true);
+    expect(existsSync(join(music, orphan))).toBe(false);
+    expect(existsSync(join(music, part))).toBe(false);
+    expect(existsSync(join(music, 'desktop.ini'))).toBe(true);
+    expect(existsSync(join(music, 'canción.mp3'))).toBe(true);
+    expect(existsSync(join(music, dirLike))).toBe(true);
+    expect(listTrackFiles(h.db()).map((t) => t.id)).toEqual([kept]);
+    // Solo pistas que existen en kv (también se va el id que nunca existió) y en la playlist.
+    expect(kvGet(h.db(), KV_DEFAULT_TRACKS)).toEqual([kept]);
+    expect(playlistPresentation(h.db(), pl.id)?.trackIds).toEqual([kept]);
+  });
+
+  it('respeta inFlight: ni el .part ni el archivo de una importación de música en curso', async () => {
+    const h = await harness();
+    const music = join(h.vaultDir, 'music');
+    const id = newId();
+    writeFileSync(join(music, `${id}.mp3.part`), randomBytes(10));
+    const id2 = newId();
+    writeFileSync(join(music, `${id2}.mp3`), randomBytes(10));
+    const release = h.inFlight.track(id, id2);
+    const report = await reconciler(h).run(ctxOf(h));
+    release();
+    expect(report).toMatchObject({ musicPartsRemoved: 0, musicOrphansRemoved: 0 });
+    expect(existsSync(join(music, `${id}.mp3.part`))).toBe(true);
+    expect(existsSync(join(music, `${id2}.mp3`))).toBe(true);
+  });
+
+  it('si music/ no se puede listar, no borra ninguna fila', async () => {
+    const h = await harness();
+    const id = track(h);
+    const io: Partial<ReconcileIo> = {
+      readdir: async (p) => {
+        if (p.endsWith('music')) throw Object.assign(new Error('x'), { code: 'EACCES' });
+        return defaultReconcileIo.readdir(p);
+      },
+    };
+    const report = await reconciler(h, { io }).run(ctxOf(h));
+    expect(report.musicRowsDropped).toBe(0);
+    expect(listTrackFiles(h.db()).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('sin carpeta music/ (ENOENT): las filas no tienen archivo y se borran', async () => {
+    const h = await harness();
+    const id = track(h, { file: false });
+    rmSync(join(h.vaultDir, 'music'), { recursive: true, force: true });
+    const report = await reconciler(h).run(ctxOf(h));
+    expect(report.musicRowsDropped).toBe(1);
+    expect(listTrackFiles(h.db()).some((t) => t.id === id)).toBe(false);
   });
 });

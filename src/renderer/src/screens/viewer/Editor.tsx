@@ -57,6 +57,8 @@ export interface EditorProps {
   src: string;
   onCancel(): void;
   onSaved(result: { edits: EditOp[]; thumbRev: number }): void;
+  /** Empieza o termina un guardado (el visor ignora Esc mientras dura, viewer-keys.ts). */
+  onSavingChange?(saving: boolean): void;
 }
 
 // ── Historial ──────────────────────────────────────────────────────────────────────────────────
@@ -273,9 +275,14 @@ function CropOverlay({ rect, box, limits, k, onRect, onApply }: CropOverlayProps
 const DISABLED = 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
 const SEPARATOR = <span aria-hidden="true" className="mx-1 h-6 w-px bg-border" />;
 
-export function Editor({ item, saved, dims, src, onCancel, onSaved }: EditorProps) {
+export function Editor({ item, saved, dims, src, onCancel, onSaved, onSavingChange }: EditorProps) {
   const [state, dispatch] = useReducer(reducer, saved, initialState);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSavingState] = useState(false);
+  // El visor lo sabe en el mismo momento (sin esperar a un render): Esc durante el guardado.
+  const setSaving = (on: boolean): void => {
+    setSavingState(on);
+    onSavingChange?.(on);
+  };
   const [error, setError] = useState<string | null>(null);
   const firstControl = useRef<HTMLButtonElement>(null);
   const [stageRef, stage] = useElementSize();

@@ -29,9 +29,15 @@ const MENU_ITEM =
   'relative flex h-9 cursor-default items-center rounded-sm pr-3 pl-8 text-sm outline-none data-highlighted:bg-surface-hover data-highlighted:outline-2 data-highlighted:outline-focus-ring';
 const MENU_LABEL = 'px-3 py-1.5 text-xs text-text-muted';
 
+/** Valor del radio "Orden de la playlist" (con un filtro de playlist; no se guarda en prefs). */
+const PLAYLIST_ORDER = 'position';
+
 function SortMenu() {
   const sort = useSessionStore((s) => s.prefs?.gallerySort);
+  const playlistFiltered = useLibraryStore((s) => s.filters.playlistId !== null);
+  const playlistOrder = useLibraryStore((s) => s.filters.playlistOrder);
   if (!sort) return null;
+  const byPlaylist = playlistFiltered && playlistOrder;
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -44,12 +50,23 @@ function SortMenu() {
         <DropdownMenu.Content align="end" sideOffset={6} className={MENU_CONTENT}>
           <DropdownMenu.Label className={MENU_LABEL}>Ordenar por</DropdownMenu.Label>
           <DropdownMenu.RadioGroup
-            value={sort.field}
+            value={byPlaylist ? PLAYLIST_ORDER : sort.field}
             onValueChange={(field) => {
+              if (field === PLAYLIST_ORDER) return setFilters({ playlistOrder: true });
               const next = SORT_FIELDS.find((f) => f.value === field);
-              if (next) void setGallerySort({ field: next.value, dir: sort.dir });
+              if (!next) return;
+              setFilters({ playlistOrder: false });
+              void setGallerySort({ field: next.value, dir: sort.dir });
             }}
           >
+            {playlistFiltered ? (
+              <DropdownMenu.RadioItem value={PLAYLIST_ORDER} className={MENU_ITEM}>
+                <DropdownMenu.ItemIndicator className="absolute left-2 inline-flex">
+                  <Check aria-hidden="true" size={16} />
+                </DropdownMenu.ItemIndicator>
+                Orden de la playlist
+              </DropdownMenu.RadioItem>
+            ) : null}
             {SORT_FIELDS.map((f) => (
               <DropdownMenu.RadioItem key={f.value} value={f.value} className={MENU_ITEM}>
                 <DropdownMenu.ItemIndicator className="absolute left-2 inline-flex">
@@ -59,28 +76,33 @@ function SortMenu() {
               </DropdownMenu.RadioItem>
             ))}
           </DropdownMenu.RadioGroup>
-          <DropdownMenu.Separator className="my-1 h-px bg-border" />
-          <DropdownMenu.Label className={MENU_LABEL}>Sentido</DropdownMenu.Label>
-          <DropdownMenu.RadioGroup
-            value={sort.dir}
-            onValueChange={(dir) => {
-              if (dir === 'asc' || dir === 'desc') void setGallerySort({ field: sort.field, dir });
-            }}
-          >
-            {(
-              [
-                ['asc', 'Ascendente'],
-                ['desc', 'Descendente'],
-              ] as const
-            ).map(([value, label]) => (
-              <DropdownMenu.RadioItem key={value} value={value} className={MENU_ITEM}>
-                <DropdownMenu.ItemIndicator className="absolute left-2 inline-flex">
-                  <Check aria-hidden="true" size={16} />
-                </DropdownMenu.ItemIndicator>
-                {label}
-              </DropdownMenu.RadioItem>
-            ))}
-          </DropdownMenu.RadioGroup>
+          {byPlaylist ? null : (
+            <>
+              <DropdownMenu.Separator className="my-1 h-px bg-border" />
+              <DropdownMenu.Label className={MENU_LABEL}>Sentido</DropdownMenu.Label>
+              <DropdownMenu.RadioGroup
+                value={sort.dir}
+                onValueChange={(dir) => {
+                  if (dir === 'asc' || dir === 'desc')
+                    void setGallerySort({ field: sort.field, dir });
+                }}
+              >
+                {(
+                  [
+                    ['asc', 'Ascendente'],
+                    ['desc', 'Descendente'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <DropdownMenu.RadioItem key={value} value={value} className={MENU_ITEM}>
+                    <DropdownMenu.ItemIndicator className="absolute left-2 inline-flex">
+                      <Check aria-hidden="true" size={16} />
+                    </DropdownMenu.ItemIndicator>
+                    {label}
+                  </DropdownMenu.RadioItem>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

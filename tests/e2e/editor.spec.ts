@@ -14,6 +14,14 @@ import {
   unlockProfile,
   type LaunchedApp,
 } from './helpers/launch';
+import { invokeIpc } from './helpers/playlists';
+import {
+  exitPresentation,
+  openSetupFromSelection,
+  saveDefaults,
+  startPresentation,
+  waitState,
+} from './helpers/presentation';
 import {
   copyFixture,
   expectItemCount,
@@ -323,6 +331,109 @@ test.describe('editor', () => {
     await page.keyboard.press('Escape');
     await expect(viewerDialog(page)).toHaveCount(0);
     await expect(cell).toBeFocused();
+  });
+
+  // La conexión entre Editor y Visor (onSavingChange → ref editorSaving → escapeAction): si se
+  // pierde, Esc cerraría el editor a mitad del guardado. `edits:save` se frena en main envolviendo
+  // el manejador de ipcMain (solo en este test; no hay ningún gancho nuevo en la app).
+  test('Esc no cierra el editor mientras edits:save está en curso (PLAN nota 159)', async () => {
+    test.setTimeout(120_000);
+    const cell = gridCells(page).nth(2);
+    const id = await mediaIdOf(cell);
+    await cell.click();
+    await openEditor(page);
+    type Gate = {
+      __saveEntered?: boolean;
+      __saveRelease?: () => void;
+      __saveOriginal?: (...args: unknown[]) => Promise<unknown>;
+    };
+    await launched.app.evaluate(({ ipcMain }) => {
+      const g = globalThis as unknown as Gate;
+      const handlers = (
+        ipcMain as unknown as {
+          _invokeHandlers: Map<string, (...args: unknown[]) => Promise<unknown>>;
+        }
+      )._invokeHandlers;
+      const original = handlers.get('edits:save');
+      if (!original) throw new Error('edits:save no está registrado');
+      g.__saveOriginal = original;
+      g.__saveEntered = false;
+      const gate = new Promise<void>((resolve) => {
+        g.__saveRelease = resolve;
+      });
+      handlers.set('edits:save', async (...args: unknown[]) => {
+        g.__saveEntered = true;
+        await gate;
+        return original(...args);
+      });
+    });
+    const restore = async (): Promise<void> => {
+      await launched.app.evaluate(({ ipcMain }) => {
+        const g = globalThis as unknown as Gate;
+        g.__saveRelease?.();
+        const handlers = (
+          ipcMain as unknown as {
+            _invokeHandlers: Map<string, (...args: unknown[]) => Promise<unknown>>;
+          }
+        )._invokeHandlers;
+        if (g.__saveOriginal) handlers.set('edits:save', g.__saveOriginal);
+      });
+    };
+    try {
+      await page.getByRole('button', { name: 'Girar a la derecha' }).click();
+      await page.getByRole('button', { name: 'Guardar' }).click();
+      // El guardado ha llegado a main y está parado ahí.
+      await expect
+        .poll(() =>
+          launched.app.evaluate(() => (globalThis as unknown as Gate).__saveEntered === true),
+        )
+        .toBe(true);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+      await expect(viewerDialog(page)).toHaveAttribute('data-viewer-mode', 'edit');
+      await expect(editorRoot(page)).toBeVisible();
+      // Se libera el guardado: termina bien y el editor se cierra solo.
+      await launched.app.evaluate(() => (globalThis as unknown as Gate).__saveRelease?.());
+      await expect(viewerDialog(page)).toHaveAttribute('data-viewer-mode', 'view', {
+        timeout: 30_000,
+      });
+      await expect.poll(() => thumbRevOf(tile(page, id))).toBe(1);
+    } finally {
+      await restore();
+    }
+    await page.keyboard.press('Escape');
+    await expect(viewerDialog(page)).toHaveCount(0);
+  });
+
+  // prepare → media:get → EditedImage de la presentación (SlideStage): la foto editada se ve editada.
+  test('una foto editada se ve editada en la presentación', async () => {
+    test.setTimeout(180_000);
+    const cell = gridCells(page).nth(0);
+    const id = await mediaIdOf(cell);
+    // Un cuarto de vuelta a la derecha sobre el original: ['blue', 'red', 'yellow', 'green'].
+    await invokeIpc(page, 'edits:save', { mediaId: id, ops: [{ t: 'rotate', q: 1 }] });
+    await saveDefaults(page, {
+      transition: 'none',
+      animations: false,
+      slideMs: 60_000,
+      startFullscreen: false,
+      musicEnabled: false,
+    });
+    try {
+      await openSetupFromSelection(page, [0]);
+      await startPresentation(page);
+      await waitState(page, (s) => s.slideIndex === 0 && s.phase === 'showing', 'la foto editada');
+      const slide = page.locator('[data-edited-image="presentation"]').first();
+      await expect
+        .poll(async () => (await quadrantsOfPng(await slide.screenshot(), POINTS)).colors)
+        .toEqual(['blue', 'red', 'yellow', 'green']);
+      const { width, height } = await quadrantsOfPng(await slide.screenshot(), POINTS);
+      expect(width / height).toBeCloseTo(0.5, 1);
+    } finally {
+      await exitPresentation(page);
+      await page.keyboard.press('Escape');
+      await invokeIpc(page, 'edits:save', { mediaId: id, ops: [] });
+    }
   });
 });
 

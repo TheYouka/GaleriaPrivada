@@ -112,4 +112,13 @@ export const HELP_SHORTCUT_GROUPS: readonly HelpShortcutGroup[] = Object.freeze(
       { keys: 'Tecla Menú / Mayús+F10', action: 'Abrir el menú contextual' },
     ],
   },
+  {
+    title: 'Al reordenar una playlist (sobre el asa de la fila)',
+    shortcuts: [
+      { keys: 'Espacio / Intro', action: 'Levantar la fila; con la fila levantada, soltarla' },
+      { keys: 'Flecha arriba / abajo', action: 'Mover la fila levantada' },
+      { keys: 'Esc', action: 'Cancelar el movimiento' },
+      { keys: 'Alt+Flecha arriba / abajo', action: 'Mover la fila una posición, sin levantarla' },
+    ],
+  },
 ] satisfies HelpShortcutGroup[]);

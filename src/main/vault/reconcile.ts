@@ -12,15 +12,16 @@
 //      `thumb_id = NULL` y entran en la cola de regeneración (en segundo plano, una cada vez, con
 //      los pasos 2–6 de §16.5 y las ediciones guardadas: vault/thumb-replace.ts);
 //   4. se borran los `tmp/*.part` que queden (por KeylessCleanup: se une a un borrado en curso);
+//   5. música (F4): `music/*.part` y archivos de music/ sin fila se borran; las filas sin archivo
+//      se borran y su id sale de kv['presentation.defaultTracks'] (reconcileMusic);
 //   6. `pendingCleanup` en segundo plano (relocate.ts);
 //   7. barrido de huérfanos en segundo plano: 1 directorio `aa` cada 50 ms, ignorando `inFlight` y
 //      volviendo a consultar la DB justo antes de cada borrado criptográfico.
-// El punto 5 (música) llega en F4 (4.2).
 //
 // La cola y el barrido usan la señal de la sesión (se aborta en el paso 2 del bloqueo) y piden la
 // DB, las claves y la carpeta con la época de la sesión [H3-6]: tras un bloqueo reciben LOCKED y
 // no tocan nada más. Durante un traslado (§8.7, paso 2) se pausan después del elemento en curso.
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppErrorException } from '@shared/errors';
 import { ID_PATTERN } from '@shared/constants';
@@ -45,8 +46,10 @@ import {
   thumbSource,
   undoReplacement,
 } from '../db/repos/media-repo';
+import { dropTracks, listTrackFiles } from '../db/repos/music-repo';
 import { log } from '../log';
 import type { Ffmpeg } from '../media/ffmpeg';
+import { MUSIC_FILE_NAME, MUSIC_PART_NAME } from '../music/music-sniff';
 import { LoopbackServer } from '../media/loopback-server';
 import { videoThumbnail } from '../media/thumbnails';
 import type { ReconcileContext, SessionManager } from '../session/session-manager';
@@ -71,13 +74,19 @@ const PART_NAME = /^([0-9a-f]{32})\.part$/;
 /** E/S de la reconciliación (inyectable: el test de [H3-7] la espía). */
 export interface ReconcileIo {
   readdir(path: string): Promise<string[]>;
-  /** Solo para las rutas concretas de las filas `pending` (punto 1), nunca por miniatura. */
+  /**
+   * Solo para las rutas concretas de las filas `pending` (punto 1) y de music/ (punto 5), nunca por
+   * miniatura.
+   */
   lstat(path: string): Promise<{ isFile(): boolean }>;
+  /** Punto 5: archivos de music/ (en claro: no hace falta sobrescribirlos). */
+  unlink(path: string): Promise<void>;
 }
 
 export const defaultReconcileIo: ReconcileIo = {
   readdir: (p) => readdir(p),
   lstat: (p) => lstat(p),
+  unlink: (p) => unlink(p),
 };
 
 export type ReconcileSession = Pick<
@@ -117,6 +126,12 @@ export interface ReconcileReport {
   missingThumbs: Id[];
   /** Punto 4. */
   partsRemoved: number;
+  /** Punto 5: `music/*.part` borrados. */
+  musicPartsRemoved: number;
+  /** Punto 5: archivos de music/ sin fila, borrados. */
+  musicOrphansRemoved: number;
+  /** Punto 5: filas de music_tracks sin archivo, borradas (y quitadas de kv). */
+  musicRowsDropped: number;
 }
 
 function errnoOf(err: unknown): string | undefined {
@@ -272,6 +287,9 @@ export class Reconciler {
       editedReplacements: [],
       missingThumbs: [],
       partsRemoved: 0,
+      musicPartsRemoved: 0,
+      musicOrphansRemoved: 0,
+      musicRowsDropped: 0,
     };
     const check = (): void => {
       if (signal.aborted) throw new AppErrorException({ code: 'LOCKED' });
@@ -309,6 +327,10 @@ export class Reconciler {
     // 4. tmp/*.part.
     check();
     report.partsRemoved = await this.removeParts(store);
+
+    // 5. Música (§8.6.1).
+    check();
+    await this.reconcileMusic(db, vaultDir, report);
 
     log.info('reconcile.done', {
       count: report.pendingReady + report.pendingDropped + report.replacementsCompleted,
@@ -553,6 +575,60 @@ export class Reconciler {
       if (out.result === 'erased' || out.result === 'unlinked') removed += 1;
     }
     return removed;
+  }
+
+  // ── Punto 5: música (§8.6.1) ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Se borran los `music/<id>.<ext>.part` y los `music/<id>.<ext>` sin fila; las filas sin archivo
+   * se borran (la cascada limpia playlist_music) y su id se quita de kv['presentation.defaultTracks']
+   * (también los ids de kv que ya no existen). Solo se tocan archivos regulares con los nombres que
+   * crea la app (nunca un enlace, una carpeta ni un archivo ajeno) y nunca un id de inFlight (una
+   * importación de música de la sesión anterior que aún no ha terminado [H3-6]). Si music/ no se
+   * puede listar (salvo ENOENT), no se borra ninguna fila: parecerían sin archivo sin estarlo.
+   */
+  private async reconcileMusic(db: Db, vaultDir: string, report: ReconcileReport): Promise<void> {
+    const dir = vaultPaths(vaultDir).music;
+    let names: string[];
+    try {
+      names = await this.io.readdir(dir);
+    } catch (err) {
+      if (!isEnoent(err)) {
+        log.warn('reconcile.failed', { errno: errnoOf(err), stage: 'music' });
+        return;
+      }
+      names = [];
+    }
+    const rows = listTrackFiles(db);
+    const known = new Set(rows.map((r) => r.fileName));
+    const present = new Set<string>();
+    for (const name of names) {
+      const part = MUSIC_PART_NAME.exec(name);
+      const file = part ? null : MUSIC_FILE_NAME.exec(name);
+      const id = part?.[1] ?? file?.[1];
+      if (!id) continue; // archivo ajeno: no se toca
+      if (file && known.has(name)) {
+        present.add(name);
+        continue;
+      }
+      if (this.deps.inFlight.has(id)) continue;
+      const path = join(dir, name);
+      try {
+        const st = await this.io.lstat(path);
+        if (!st.isFile()) continue;
+        await this.io.unlink(path);
+        if (part) report.musicPartsRemoved += 1;
+        else report.musicOrphansRemoved += 1;
+      } catch (err) {
+        if (!isEnoent(err)) log.warn('reconcile.failed', { errno: errnoOf(err), stage: 'music' });
+      }
+    }
+    const missing = rows
+      .filter((r) => !present.has(r.fileName) && !this.deps.inFlight.has(r.id))
+      .map((r) => r.id);
+    report.musicRowsDropped = dropTracks(db, missing);
+    const changed = report.musicPartsRemoved + report.musicOrphansRemoved + report.musicRowsDropped;
+    if (changed > 0) log.info('reconcile.music', { count: changed });
   }
 
   // ── Cola de regeneración (punto 3, §16.5 pasos 2–6) ──────────────────────────────────────────

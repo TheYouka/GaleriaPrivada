@@ -1,10 +1,12 @@
 // Ajustes (docs/DESIGN.md §14.9), secciones en Tabs verticales. F1: Apariencia y Seguridad; F2:
-// Almacenamiento; las demás (Presentación, Música, Acerca de) llegan con sus fases. La pestaña activa
+// Almacenamiento; F4: Música y Presentación; Acerca de llega con su fase. La pestaña activa
 // vive en nav-store, así que se conserva al cambiar de tema.
 import { Tabs } from 'radix-ui';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { useNavStore, type SettingsTab } from '../../stores/nav-store';
 import { AppearanceTab } from './AppearanceTab';
+import { MusicLibrary } from './MusicLibrary';
+import { PresentationTab } from './PresentationTab';
 import { SecurityTab } from './SecurityTab';
 import { StorageTab } from './StorageTab';
 
@@ -12,6 +14,8 @@ const TABS: { value: SettingsTab; label: string }[] = [
   { value: 'appearance', label: 'Apariencia' },
   { value: 'security', label: 'Seguridad' },
   { value: 'storage', label: 'Almacenamiento' },
+  { value: 'music', label: 'Música' },
+  { value: 'presentation', label: 'Presentación' },
 ];
 
 export function SettingsScreen() {
@@ -47,6 +51,12 @@ export function SettingsScreen() {
         </Tabs.Content>
         <Tabs.Content value="storage" className="min-w-0 flex-1">
           <StorageTab />
+        </Tabs.Content>
+        <Tabs.Content value="music" className="min-w-0 flex-1">
+          <MusicLibrary />
+        </Tabs.Content>
+        <Tabs.Content value="presentation" className="min-w-0 flex-1">
+          <PresentationTab />
         </Tabs.Content>
       </Tabs.Root>
     </div>

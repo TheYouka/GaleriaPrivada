@@ -20,16 +20,20 @@ import {
   IDS_MAX,
   IMPORT_PATHS_MAX,
   MEDIA_NAME_MAX,
+  MUSIC_TITLE_MAX,
   PASSWORD_MAX_BYTES,
   PASSWORD_MIN_BYTES,
   PATH_MAX_UTF16,
+  PLAYLIST_MAX_ITEMS,
+  PLAYLIST_NAME_MAX,
+  PRESENTATION_LIMITS,
   PROFILE_NAME_MAX,
   PROFILE_NAME_MIN,
   SEARCH_MAX,
 } from '@shared/constants';
 import type { AnyInvokeChannel, ReqOf } from '@shared/ipc-contract';
 import { AVAILABLE_THEME_IDS, THEME_IDS, type ThemeId } from '@shared/themes';
-import type { AvatarInput, EditOp, MediaQuery } from '@shared/types';
+import type { AvatarInput, EditOp, MediaQuery, PresentationSettings } from '@shared/types';
 import { GALLERY_SORT_SCHEMA, PRESENTATION_PLAIN_SCHEMA } from '../settings/settings-store';
 
 // ── Ayudantes ──────────────────────────────────────────────────────────────────────────────────
@@ -117,6 +121,25 @@ export const mediaQuerySchema: z.ZodType<MediaQuery> = z
     message: 'position-needs-playlist',
     path: ['sort', 'field'],
   });
+
+/** playlists:reorder (§10.3): permutación de los elementos actuales, ≤ 2000 y sin duplicados. */
+export const reorderIdsSchema = z
+  .array(idSchema)
+  .max(PLAYLIST_MAX_ITEMS)
+  .refine((ids) => new Set(ids).size === ids.length, { message: 'duplicates' });
+
+/**
+ * PresentationSettings (§10.3): los campos en claro de prefs (PRESENTATION_PLAIN_SCHEMA: slideMs en
+ * pasos de 500, volúmenes en [0, 1], randomPool sin duplicados…) y `trackIds` ≤ 100 sin duplicados.
+ * Que las pistas existan (NOT_FOUND) lo comprueba el handler en la DB.
+ */
+export const presentationSettingsSchema: z.ZodType<PresentationSettings> = z.strictObject({
+  ...PRESENTATION_PLAIN_SCHEMA.shape,
+  trackIds: z
+    .array(idSchema)
+    .max(PRESENTATION_LIMITS.trackIdsMax)
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'duplicates' }),
+});
 
 /** Valor normalizado de un recorte: número finito en [0, 1] (zod 4 rechaza NaN e ±Infinity). */
 const unitSchema = z.number().min(0).max(1);
@@ -226,4 +249,26 @@ export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
     mediaId: idSchema,
     ops: z.array(editOpSchema).max(EDIT_OPS_MAX),
   }),
+
+  'playlists:list': z.undefined(),
+  'playlists:create': z.strictObject({ name: text(1, PLAYLIST_NAME_MAX) }),
+  'playlists:rename': z.strictObject({ id: idSchema, name: text(1, PLAYLIST_NAME_MAX) }),
+  'playlists:delete': z.strictObject({ id: idSchema }),
+  // [H3-4] Hasta 100 000 ids: el repo los pasa en un único parámetro JSON (json_each(?)).
+  'playlists:addItems': z.strictObject({ id: idSchema, mediaIds: idListSchema }),
+  'playlists:removeItems': z.strictObject({ id: idSchema, mediaIds: idListSchema }),
+  // La permutación exacta la comprueba el repo contra los elementos actuales.
+  'playlists:reorder': z.strictObject({ id: idSchema, mediaIds: reorderIdsSchema }),
+  'playlists:setPresentation': z.strictObject({
+    id: idSchema,
+    settings: presentationSettingsSchema.nullable(),
+  }),
+
+  'music:import': z.undefined(),
+  'music:list': z.undefined(),
+  'music:rename': z.strictObject({ id: idSchema, title: text(1, MUSIC_TITLE_MAX) }),
+  'music:delete': z.strictObject({ id: idSchema }),
+
+  'presentation:getConfig': z.strictObject({ playlistId: idSchema.optional() }),
+  'presentation:saveDefaults': z.strictObject({ settings: presentationSettingsSchema }),
 };

@@ -3,7 +3,7 @@
 // Ctrl+Shift+I, Ctrl+F, F5, F1 y Ctrl+,) y el aviso de actividad para el bloqueo por inactividad
 // (session:activity, como mucho cada 10 s). Aquí se montan también lo que debe seguir visible en
 // cualquier pantalla: el panel de importación, la capa de soltar archivos, los diálogos de renombrar y
-// eliminar, el visor de fotos y vídeos (§16.1) y el traslado de la bóveda.
+// eliminar (también los de playlists), el visor de fotos y vídeos (§16.1) y el traslado de la bóveda.
 import { useEffect } from 'react';
 import { installActivityReporter } from '../lib/activity';
 import { announce } from '../lib/announce';
@@ -11,7 +11,15 @@ import { isCtrlKey, isTextInputTarget } from '../lib/keyboard';
 import { toast } from '../lib/toast';
 import { isImporting, startImport } from '../stores/import-store';
 import { subscribeLibrary } from '../stores/library-store';
+import { resetMusic } from '../stores/music-store';
 import { useNavStore } from '../stores/nav-store';
+import { resetPresentation, startFromGallery } from '../stores/presentation-store';
+import {
+  closePlaylist,
+  loadPlaylists,
+  resetPlaylists,
+  subscribePlaylists,
+} from '../stores/playlists-store';
 import { lockSession } from '../stores/session-store';
 import { NAV_MODEL, type NavKey } from '../themes/shells/nav-model';
 import { SidebarShell } from '../themes/shells/SidebarShell';
@@ -24,8 +32,11 @@ import { GalleryScreen } from './gallery/GalleryScreen';
 import { ImportDropZone } from './gallery/ImportDropZone';
 import { ImportProgress } from './gallery/ImportProgress';
 import { RenameDialog } from './gallery/RenameDialog';
-import { COMING_SOON } from './gallery/SelectionBar';
 import { HelpScreen } from './help/HelpScreen';
+import { PlaylistDialogs } from './playlists/PlaylistDialogs';
+import { PlaylistsScreen } from './playlists/PlaylistsScreen';
+import { PresentationScreen } from './presentation/PresentationScreen';
+import { PresentationSetupDialog } from './presentation/PresentationSetupDialog';
 import { Viewer } from './viewer/Viewer';
 import { PlaceholderScreen } from './PlaceholderScreen';
 import { RelocateDialog } from './settings/RelocateDialog';
@@ -36,11 +47,7 @@ function Screen({ active }: { active: NavKey }) {
     case 'settings':
       return <SettingsScreen />;
     case 'playlists':
-      return (
-        <PlaceholderScreen title="Playlists">
-          Las playlists llegan en una fase posterior.
-        </PlaceholderScreen>
-      );
+      return <PlaylistsScreen />;
     case 'dual':
       return (
         <PlaceholderScreen title="Vídeo dual">
@@ -86,6 +93,18 @@ export function UnlockedApp() {
   useEffect(() => installActivityReporter(), []);
   // library:changed → recarga con debounce, también fuera de la galería (§10.2).
   useEffect(() => subscribeLibrary(), []);
+  // Playlists: la lista (para el menú «Añadir a playlist» y el filtro de la galería) se carga al abrir
+  // la bóveda y se refresca con library:changed; al bloquear no queda nada en memoria.
+  useEffect(() => {
+    void loadPlaylists();
+    const off = subscribePlaylists();
+    return () => {
+      off();
+      resetPlaylists();
+      resetMusic();
+      resetPresentation();
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -120,16 +139,25 @@ export function UnlockedApp() {
         e.preventDefault();
         nav.navigate('help');
       } else if (e.key === 'F5') {
-        // La presentación llega en F4; F5 no debe recargar la ventana.
+        // F5 no debe recargar la ventana: empieza la presentación de la selección o, sin selección,
+        // de todo lo visible en la galería (§17.1).
         e.preventDefault();
-        toast(`Presentación: ${COMING_SOON.toLowerCase()}.`);
+        if (galleryKindOf(nav.active) === null) {
+          toast('Para empezar una presentación, ve a la galería y pulsa F5.');
+        } else {
+          void startFromGallery();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const navigate = (key: NavKey): void => useNavStore.getState().navigate(key);
+  const navigate = (key: NavKey): void => {
+    // Elegir «Playlists» en la navegación vuelve a la lista de tarjetas.
+    if (key === 'playlists') closePlaylist();
+    useNavStore.getState().navigate(key);
+  };
   const screen = <Screen active={active} />;
   const commandBar =
     galleryKindOf(active) === null ? null : (
@@ -152,7 +180,10 @@ export function UnlockedApp() {
       <ImportDropZone />
       <RenameDialog />
       <DeleteDialog />
+      <PlaylistDialogs />
       <Viewer />
+      <PresentationSetupDialog />
+      <PresentationScreen />
       {/* Traslado de la bóveda (§8.7): progreso no descartable, visible en cualquier pantalla. */}
       <RelocateDialog />
     </>

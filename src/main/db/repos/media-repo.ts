@@ -24,6 +24,7 @@ import { foldName } from '../../import/naming';
 import type { Db } from '../database';
 import { listEdits } from './edit-repo';
 import { importReplaceKey, kvDelete, kvSet } from './kv-repo';
+import { compactPositions, playlistsContaining } from './playlist-repo';
 
 export interface NewMedia {
   id: Id;
@@ -540,9 +541,13 @@ export function deleteMedia(db: Db, ids: readonly Id[]): DeletedMedia[] {
          WHERE state = 'ready' AND id IN (SELECT value FROM json_each(?))`,
       )
       .all(json) as { id: string; thumb_id: string | null }[];
+    // F4: la cascada quita los elementos de playlist y deja huecos en `position`; las playlists
+    // afectadas se vuelven a numerar (densa, mismo orden relativo) en la misma transacción.
+    const playlists = rows.length > 0 ? playlistsContaining(db, json) : [];
     db.prepare(
       "DELETE FROM media WHERE state = 'ready' AND id IN (SELECT value FROM json_each(?))",
     ).run(json);
+    compactPositions(db, playlists);
     return rows.map((r) => ({ id: r.id, thumbId: r.thumb_id }));
   })();
 }

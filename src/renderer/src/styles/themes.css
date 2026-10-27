@@ -32,6 +32,13 @@
   color: #ffffff;
 }
 
+/*
+ * Presentación en modo ventana (§17.7): la barra de título se mantiene para mover y redimensionar la
+ * ventana. El diálogo modal de Radix pone `pointer-events: none` en el <body>; la barra lo recupera.
+ */
+html[data-presentation-mode='windowed'] [data-titlebar] {
+  pointer-events: auto;
+}
 /* Ondas: el panel de contenido deja ver las ondas; el texto va sobre `surface-alpha`. */
 [data-theme='ps3'] [data-titlebar] {
   color: var(--g-text);
