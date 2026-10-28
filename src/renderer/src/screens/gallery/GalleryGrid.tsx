@@ -1,8 +1,10 @@
 // Rejilla virtualizada de la galería (docs/DESIGN.md §14.6): TanStack Virtual sobre filas (cabeceras
 // de mes solo al ordenar por fecha, mosaicos cuadrados de 120/180/260 px), `role="grid"` con una
 // sola parada de Tab (roving tabindex), selección con Ctrl/Shift/Ctrl+A, atajos de teclado y menú
-// contextual. Un clic o Intro abren el visor (§14.6); Ctrl+clic, Mayús+clic, la casilla y Espacio
-// seleccionan.
+// contextual. Clics (PLAN.md notas 192 y 195): un clic en cualquier parte del mosaico SIEMPRE alterna
+// ese elemento (nunca abre); con ≥ 1 marcado, la casilla se ve en todos y aparece la barra. Ctrl+clic
+// alterna, Mayús+clic marca el rango, Espacio alterna el enfocado; Intro y el doble clic abren (el
+// doble clic deja la selección como estaba antes de su primer clic, sin retrasar ningún clic).
 import {
   useCallback,
   useEffect,
@@ -20,7 +22,12 @@ import { cx } from '../../lib/cx';
 import { formatDuration } from '../../lib/format';
 import { thumbUrl } from '../../lib/vault-url';
 import { requestDelete, requestRename, useLibraryStore } from '../../stores/library-store';
-import { useSelectionStore, type SelectionAction } from '../../stores/selection-store';
+import {
+  tileClickAction,
+  useSelectionStore,
+  type SelectionAction,
+  type SelectionState,
+} from '../../stores/selection-store';
 import { openViewer, useViewerStore } from '../../stores/viewer-store';
 import { useTheme } from '../../themes/use-theme';
 import { focusGalleryCell } from './gallery-focus';
@@ -66,6 +73,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
   const gap = parseGap(theme.def.tokens[theme.scheme]?.['tile-gap']);
   const tile = TILE_SIZES[size];
   const selected = useSelectionStore((s) => s.selected);
+  const selectionMode = selected.size > 0;
   const removedTick = useLibraryStore((s) => s.removedTick);
   const viewerId = useViewerStore((s) => (s.open ? s.currentId : null));
   const closedTick = useViewerStore((s) => s.closedTick);
@@ -203,10 +211,32 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
     });
   };
 
+  // Estado de la selección justo antes del primer clic de un posible doble clic: el doble clic abre el
+  // elemento y deja la selección como estaba (sus dos clics habrían alternado el elemento dos veces).
+  const clickSnapshot = useRef<{ id: Id; state: SelectionState } | null>(null);
+
   const onCellClick = (e: MouseEvent<HTMLDivElement>, item: MediaListItem): void => {
-    if (e.ctrlKey || e.metaKey) dispatch({ type: 'ctrl', id: item.id });
-    else if (e.shiftKey) dispatch({ type: 'shift', id: item.id });
-    else openFrom(e.currentTarget, item);
+    const modified = e.ctrlKey || e.metaKey || e.shiftKey;
+    // El segundo clic de un doble clic sin modificadores lo atiende `onCellDoubleClick`.
+    if (e.detail >= 2 && !modified) return;
+    const store = useSelectionStore.getState();
+    const action = tileClickAction(
+      { ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey },
+      item.id,
+    );
+    clickSnapshot.current = {
+      id: item.id,
+      state: { selected: store.selected, anchor: store.anchor },
+    };
+    dispatch(action);
+  };
+
+  const onCellDoubleClick = (e: MouseEvent<HTMLDivElement>, item: MediaListItem): void => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || useViewerStore.getState().open) return;
+    const snapshot = clickSnapshot.current;
+    clickSnapshot.current = null;
+    if (snapshot?.id === item.id) dispatch({ type: 'restore', state: snapshot.state });
+    openFrom(e.currentTarget, item);
   };
 
   const renameTargetFor = (item: MediaListItem): MediaListItem | null => {
@@ -247,7 +277,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
     switch (e.key) {
       case ' ':
         e.preventDefault();
-        dispatch({ type: 'ctrl', id: item.id });
+        dispatch({ type: 'toggle', id: item.id });
         break;
       case 'Enter':
         e.preventDefault();
@@ -296,6 +326,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
           ref={scrollRef}
           role="grid"
           data-gallery-grid=""
+          data-selection-mode={selectionMode ? 'true' : 'false'}
           tabIndex={-1}
           aria-label="Galería"
           aria-multiselectable="true"
@@ -303,7 +334,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
           aria-colcount={cols}
           onContextMenu={onContextMenu}
           onKeyDown={onGridKeyDown}
-          className="absolute inset-0 overflow-auto p-3"
+          className="absolute inset-0 overflow-auto p-3 pb-28"
         >
           <div
             role="rowgroup"
@@ -346,6 +377,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                           tabIndex={index === active ? 0 : -1}
                           onFocus={() => setFocusIndex(index)}
                           onClick={(e) => onCellClick(e, item)}
+                          onDoubleClick={(e) => onCellDoubleClick(e, item)}
                           onMouseDown={(e) => {
                             // Mayús+clic no debe marcar texto entre dos celdas.
                             if (e.shiftKey) e.preventDefault();
@@ -378,11 +410,14 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                             tabIndex={-1}
                             onClick={(e) => {
                               e.stopPropagation();
-                              dispatch({ type: 'ctrl', id: item.id });
+                              dispatch({ type: 'toggle', id: item.id });
                             }}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             className={cx(
                               'absolute top-1.5 left-1.5 inline-flex size-6 items-center justify-center rounded-full border-2 border-white text-white transition-opacity group-focus-within:opacity-100 group-hover:opacity-100',
-                              isSelected ? 'bg-accent opacity-100' : 'bg-black/50 opacity-0',
+                              isSelected
+                                ? 'bg-accent opacity-100'
+                                : cx('bg-black/50', selectionMode ? 'opacity-100' : 'opacity-0'),
                             )}
                           >
                             {isSelected ? (

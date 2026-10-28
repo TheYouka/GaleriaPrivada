@@ -18,7 +18,7 @@ import {
   type ImportedTrack,
 } from './library';
 import type { LaunchedApp } from './launch';
-import { ctrlSelect, invokeIpc } from './playlists';
+import { clickSelect, invokeIpc } from './playlists';
 
 /** Estado que expone el renderer solo en pruebas (presentation-runtime.ts, `testState`). */
 export interface PresentationState {
@@ -194,7 +194,7 @@ export async function openSetupFromSelection(page: Page, indexes: number[]): Pro
     .getByRole('region', { name: 'Selección' })
     .getByRole('button', { name: 'Cancelar selección' });
   if (await cancel.isVisible()) await cancel.click();
-  await ctrlSelect(page, indexes);
+  await clickSelect(page, indexes);
   await page
     .getByRole('region', { name: 'Selección' })
     .getByRole('button', { name: 'Presentación' })

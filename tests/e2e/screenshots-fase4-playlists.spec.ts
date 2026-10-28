@@ -21,7 +21,7 @@ import {
 } from './helpers/library';
 import {
   addSelectionToNewPlaylist,
-  ctrlSelect,
+  clickSelect,
   imagesLoaded,
   openPlaylistDetail,
   openPlaylistsScreen,
@@ -80,10 +80,10 @@ for (const [label, displayName, id] of [
       await expectItemCount(page, 8);
 
       // Dos playlists con contenido: «Vacaciones» (4 fotos) y «Cumpleaños» (2).
-      await ctrlSelect(page, [0, 1, 2, 3]);
+      await clickSelect(page, [0, 1, 2, 3]);
       await addSelectionToNewPlaylist(page, 'Vacaciones');
       await selectionBar(page).getByRole('button', { name: 'Cancelar selección' }).click();
-      await ctrlSelect(page, [5, 6]);
+      await clickSelect(page, [5, 6]);
       await addSelectionToNewPlaylist(page, 'Cumpleaños');
 
       // Menú «Añadir a playlist» con las dos playlists y «Nueva playlist…» (sin avisos residuales).

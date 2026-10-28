@@ -18,7 +18,7 @@ import {
   writePhoto,
   writeTone,
 } from './helpers/library';
-import { ctrlSelect, imagesLoaded } from './helpers/playlists';
+import { clickSelect, imagesLoaded } from './helpers/playlists';
 import {
   controlsBar,
   installFullscreenDouble,
@@ -87,7 +87,7 @@ for (const [label, displayName, id] of [
       );
 
       // Diálogo de inicio con la selección.
-      await ctrlSelect(page, [0, 1, 2, 3, 4, 5]);
+      await clickSelect(page, [0, 1, 2, 3, 4, 5]);
       await page
         .getByRole('region', { name: 'Selección' })
         .getByRole('button', { name: 'Presentación' })

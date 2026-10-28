@@ -118,19 +118,16 @@ describe('audio: «Silenciar vídeos» + «Música de fondo» + mantener la mús
 });
 
 describe('hacia el motor', () => {
-  it('«Animaciones» llega al planificador como Ken Burns y el movimiento reducido pasa tal cual', () => {
-    expect(schedulerSettingsOf(base, false)).toMatchObject({
+  it('«Animaciones» llega al planificador como Ken Burns y no existe el movimiento reducido', () => {
+    expect(schedulerSettingsOf(base)).toMatchObject({
       transition: 'fade',
       transitionMs: 700,
       slideMs: 5000,
       loop: true,
       kenBurns: true,
-      reducedMotion: false,
     });
-    expect(schedulerSettingsOf({ ...base, animations: false }, true)).toMatchObject({
-      kenBurns: false,
-      reducedMotion: true,
-    });
+    expect(schedulerSettingsOf({ ...base, animations: false }).kenBurns).toBe(false);
+    expect(schedulerSettingsOf(base)).not.toHaveProperty('reducedMotion');
   });
 
   it('el audio lleva modo, música, volúmenes y fundido', () => {

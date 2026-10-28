@@ -1,5 +1,6 @@
-// Galería (docs/DESIGN.md §14.6): cabecera con el recuento, chips de filtros, barra de selección y
-// la rejilla virtualizada. El tipo sale de la entrada activa del NavModel (Todo / Fotos / Vídeos), el
+// Galería (docs/DESIGN.md §14.6): cabecera con el recuento, chips de filtros, la rejilla virtualizada y
+// la barra de selección, superpuesta abajo para que no desplace la rejilla (PLAN.md nota 193). El tipo
+// sale de la entrada activa del NavModel (Todo / Fotos / Vídeos), el
 // orden y el tamaño de las preferencias del perfil y la búsqueda se aplica con un debounce de 200 ms.
 // Con un filtro de playlist (§14.6) la rejilla puede seguir el orden de la playlist.
 import { useEffect, useMemo } from 'react';
@@ -131,7 +132,6 @@ export function GalleryScreen() {
         {status === 'ready' ? <p className="text-sm text-text-muted">{count}</p> : null}
       </header>
       <FilterChips />
-      <SelectionBar />
       <div className="relative min-h-0 flex-1">
         {status === 'error' ? (
           <div className="flex flex-col items-start gap-3 p-8">
@@ -153,6 +153,7 @@ export function GalleryScreen() {
             Cargando…
           </p>
         )}
+        <SelectionBar />
       </div>
     </div>
   );

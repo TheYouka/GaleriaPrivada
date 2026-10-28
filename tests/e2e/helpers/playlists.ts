@@ -37,12 +37,12 @@ export async function openGallery(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1, name: 'Galería' })).toBeVisible();
 }
 
-/** Selecciona las celdas por índice con Ctrl+clic. */
-export async function ctrlSelect(page: Page, indexes: number[]): Promise<void> {
-  for (const i of indexes)
-    await gridCells(page)
-      .nth(i)
-      .click({ modifiers: ['Control'] });
+/**
+ * Selecciona las celdas por índice con clics simples: desde PLAN.md nota 195 un clic en cualquier
+ * parte del mosaico siempre alterna su selección (abrir es el doble clic o Intro).
+ */
+export async function clickSelect(page: Page, indexes: number[]): Promise<void> {
+  for (const i of indexes) await gridCells(page).nth(i).click();
 }
 
 export function selectionBar(page: Page): Locator {

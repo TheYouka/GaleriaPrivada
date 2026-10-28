@@ -231,11 +231,13 @@ test('el tamaño de las miniaturas cambia las columnas', async () => {
 test('selección con clic, Ctrl, Shift y Ctrl+A; Esc la limpia', async () => {
   const cells = gridCells(page);
   const selected = page.getByRole('gridcell', { selected: true });
-  // Un clic abre el visor (§14.6): la selección se hace con Ctrl+clic, la casilla o Espacio.
-  await cells.nth(2).click({ modifiers: ['Control'] });
+  // Un clic simple (nota 195) siempre alterna esa tarjeta, haya o no selección: nunca abre el visor.
+  await cells.nth(2).click();
   await expect(selected).toHaveCount(1);
-  await cells.nth(4).click({ modifiers: ['Control'] });
+  await expect(page.getByText('1 seleccionado', { exact: true })).toBeVisible();
+  await cells.nth(4).click();
   await expect(selected).toHaveCount(2);
+  await expect(page.locator('[data-viewer]')).toHaveCount(0);
   await cells.nth(2).click({ modifiers: ['Control'] });
   await expect(selected).toHaveCount(1);
   await expect(page.getByText('1 seleccionado', { exact: true })).toBeVisible();
@@ -254,6 +256,252 @@ test('selección con clic, Ctrl, Shift y Ctrl+A; Esc la limpia', async () => {
   await page.keyboard.press('Escape');
   await expect(selected).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Selección' })).toBeHidden();
+});
+
+const viewer = (): ReturnType<Page['locator']> => page.locator('[data-viewer]');
+const grid = (): ReturnType<Page['locator']> => page.locator('[data-gallery-grid]');
+const selectionBar = (): ReturnType<Page['getByRole']> =>
+  page.getByRole('region', { name: 'Selección' });
+
+async function closeViewerWithEsc(): Promise<void> {
+  await expect(viewer()).toHaveAttribute('data-viewer-state', 'open', { timeout: 10_000 });
+  await page.keyboard.press('Escape');
+  await expect(viewer()).toHaveCount(0);
+}
+
+/** Los índices de las celdas con aria-selected="true" (por CSS, también con el visor abierto). */
+async function selectedIndexes(): Promise<number[]> {
+  return page
+    .locator('[role="gridcell"]')
+    .evaluateAll((els) =>
+      els.flatMap((el, i) => (el.getAttribute('aria-selected') === 'true' ? [i] : [])),
+    );
+}
+
+test('un clic siempre alterna la tarjeta (con o sin selección) y nunca abre el visor', async () => {
+  const cells = gridCells(page);
+  const selected = page.getByRole('gridcell', { selected: true });
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'false');
+  await expect(selectionBar()).toBeHidden();
+
+  // Sin nada marcado, un clic simple marca la tarjeta, aparece la barra con «1» y el visor NO se abre.
+  await cells.nth(1).click();
+  await expect(selected).toHaveCount(1);
+  await expect(cells.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(selectionBar()).toBeVisible();
+  await expect(selectionBar().getByText('1 seleccionado', { exact: true })).toBeVisible();
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'true');
+  await expect(viewer()).toHaveCount(0);
+
+  // Otro clic en la misma la desmarca y se vuelve al modo normal (la barra desaparece).
+  await cells.nth(1).click();
+  await expect(selected).toHaveCount(0);
+  await expect(selectionBar()).toBeHidden();
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'false');
+  await expect(viewer()).toHaveCount(0);
+
+  // La casilla también entra en el modo selección. Un clic simple en otra tarjeta (en la imagen, no
+  // en la casilla) la marca.
+  await cells.nth(1).getByRole('checkbox').click();
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'true');
+  await cells.nth(3).click();
+  await expect(selected).toHaveCount(2);
+  await expect(viewer()).toHaveCount(0);
+  await cells.nth(5).click({ position: { x: 20, y: 90 } });
+  await expect(selected).toHaveCount(3);
+  await expect(selectionBar().getByText('3 seleccionados', { exact: true })).toBeVisible();
+  await expect(viewer()).toHaveCount(0);
+
+  // Un clic en una marcada la desmarca; al quedar la última desmarcada se vuelve al modo normal.
+  await cells.nth(3).click();
+  await expect(selected).toHaveCount(2);
+  await cells.nth(1).click();
+  await expect(selected).toHaveCount(1);
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'true');
+  await cells.nth(5).click();
+  await expect(selected).toHaveCount(0);
+  await expect(selectionBar()).toBeHidden();
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'false');
+  await expect(viewer()).toHaveCount(0);
+
+  // Vuelto al modo normal, el clic sigue marcando (no abre); Esc lo limpia.
+  await cells.nth(2).click();
+  await expect(selected).toHaveCount(1);
+  await expect(viewer()).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(0);
+  await expect(selectionBar()).toBeHidden();
+});
+
+test('modo selección: Ctrl+clic alterna, Mayús+clic marca el rango y Esc o «Cancelar selección» vuelven al modo normal', async () => {
+  const cells = gridCells(page);
+  const selected = page.getByRole('gridcell', { selected: true });
+
+  await cells.nth(1).click({ modifiers: ['Control'] });
+  await expect(selected).toHaveCount(1);
+  await cells.nth(4).click({ modifiers: ['Shift'] });
+  await expect(selected).toHaveCount(4); // 1..4 desde el ancla
+  await cells.nth(2).click({ modifiers: ['Control'] });
+  await expect(selected).toHaveCount(3);
+  await expect(cells.nth(2)).toHaveAttribute('aria-selected', 'false');
+  await cells.nth(6).click({ modifiers: ['Control'] });
+  await expect(selected).toHaveCount(4);
+  await cells.nth(0).click(); // un clic simple, en modo selección, alterna
+  await expect(selected).toHaveCount(5);
+  expect(await selectedIndexes()).toEqual([0, 1, 3, 4, 6]);
+  await expect(viewer()).toHaveCount(0);
+
+  // «Cancelar selección» sale del modo selección.
+  await selectionBar().getByRole('button', { name: 'Cancelar selección' }).click();
+  await expect(selected).toHaveCount(0);
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'false');
+  await expect(selectionBar()).toBeHidden();
+
+  // Esc también; después, un doble clic abre y deja la selección vacía.
+  await cells.nth(2).click({ modifiers: ['Control'] });
+  await cells.nth(3).click();
+  await expect(selected).toHaveCount(2);
+  await cells.nth(2).focus();
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(0);
+  await expect(grid()).toHaveAttribute('data-selection-mode', 'false');
+  await cells.nth(3).dblclick();
+  await expect(viewer()).toBeVisible();
+  await closeViewerWithEsc();
+  await expect(selected).toHaveCount(0);
+});
+
+test('modo selección: las casillas se ven en todas las tarjetas y la barra no desplaza la rejilla', async () => {
+  const cells = gridCells(page);
+  const opacity = (i: number): Promise<number> =>
+    cells
+      .nth(i)
+      .getByRole('checkbox')
+      .evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity));
+
+  // Sin selección, las casillas están ocultas (salvo con el ratón encima o el foco).
+  await page.mouse.move(2, 2);
+  expect(await opacity(6)).toBe(0);
+  const before = await cells.nth(6).boundingBox();
+  await cells.nth(0).click(); // un solo clic simple basta para que aparezca la barra
+  await expect(selectionBar()).toBeVisible();
+  for (let i = 0; i < 8; i += 1) {
+    await expect.poll(() => opacity(i), { message: `casilla ${i}` }).toBe(1);
+  }
+
+  // La barra aparece sin mover las tarjetas y queda dentro de la ventana.
+  const after = await cells.nth(6).boundingBox();
+  expect(after).toEqual(before);
+  const bar = await selectionBar().boundingBox();
+  const win = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  expect(bar).toBeTruthy();
+  expect(win).toBeTruthy();
+  if (bar && win) {
+    expect(bar.y).toBeGreaterThan(0);
+    expect(bar.y + bar.height).toBeLessThanOrEqual(win.height);
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(selectionBar()).toBeHidden();
+  await page.mouse.move(2, 2);
+  await expect.poll(() => opacity(6)).toBe(0);
+});
+
+test('modo selección: los clics no se retrasan y dos clics seguidos en tarjetas distintas dan 2', async () => {
+  const cells = gridCells(page);
+  const selected = page.getByRole('gridcell', { selected: true });
+  await cells.nth(0).click();
+  await expect(selected).toHaveCount(1, { timeout: 150 });
+  // Un retraso para distinguir el doble clic sería de cientos de ms: el clic marca de inmediato.
+  await cells.nth(2).click();
+  await expect(selected).toHaveCount(2, { timeout: 150 });
+  await cells.nth(3).click();
+  await cells.nth(4).click();
+  await expect(selected).toHaveCount(4);
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(0);
+});
+
+test.describe('el doble clic siempre abre y deja la selección como estaba antes de su primer clic', () => {
+  for (const scenario of [
+    { name: 'con la selección vacía', setup: [] as number[], target: 2 },
+    { name: 'con otras dos marcadas', setup: [0, 4], target: 2 },
+    { name: 'sobre una ya marcada', setup: [0, 2], target: 2 },
+    { name: 'sobre la única marcada', setup: [2], target: 2 },
+  ]) {
+    test(scenario.name, async () => {
+      const cells = gridCells(page);
+      for (const i of scenario.setup) await cells.nth(i).click();
+      const beforeSelected = await selectedIndexes();
+      const countText = scenario.setup.length > 0 ? await selectionBar().textContent() : null;
+      expect(beforeSelected).toEqual([...scenario.setup].sort((a, b) => a - b));
+
+      const name = await cells.nth(scenario.target).locator('img').getAttribute('alt');
+      await cells.nth(scenario.target).dblclick();
+      await expect(viewer()).toBeVisible();
+      await expect(viewer()).toHaveAccessibleName(name ?? '');
+      // La selección sigue intacta con el visor abierto…
+      expect(await selectedIndexes()).toEqual(beforeSelected);
+      await closeViewerWithEsc();
+      // …y al cerrarlo.
+      expect(await selectedIndexes()).toEqual(beforeSelected);
+      if (scenario.setup.length > 0) {
+        await expect(selectionBar()).toBeVisible();
+        expect(await selectionBar().textContent()).toBe(countText);
+      } else {
+        await expect(selectionBar()).toBeHidden();
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('gridcell', { selected: true })).toHaveCount(0);
+    });
+  }
+});
+
+test('Intro abre el elemento enfocado también sin selección, y la deja vacía', async () => {
+  const cells = gridCells(page);
+  const selected = page.getByRole('gridcell', { selected: true });
+  await expect(selected).toHaveCount(0);
+  await cells.nth(1).focus();
+  await page.keyboard.press('Enter');
+  await expect(viewer()).toBeVisible();
+  await closeViewerWithEsc();
+  await expect(selected).toHaveCount(0);
+  await expect(selectionBar()).toBeHidden();
+  await expect(cells.nth(1)).toBeFocused();
+});
+
+test('modo selección: Intro abre el enfocado con la selección intacta; Espacio alterna; el foco es visible y hay una sola parada de Tab', async () => {
+  const cells = gridCells(page);
+  const selected = page.getByRole('gridcell', { selected: true });
+  await cells.nth(0).click();
+  await cells.nth(3).click();
+  await expect(selected).toHaveCount(2);
+
+  // Roving tabindex: una sola celda con tabindex="0".
+  await expect(page.locator('[role="gridcell"][tabindex="0"]')).toHaveCount(1);
+  await cells.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(cells.nth(1)).toBeFocused();
+  // Foco visible: la celda enfocada muestra el anillo de foco (outline de :focus-visible).
+  const outline = await cells
+    .nth(1)
+    .evaluate((el) => `${getComputedStyle(el).outlineStyle}|${getComputedStyle(el).outlineWidth}`);
+  expect(outline).not.toMatch(/^none\|/);
+
+  await page.keyboard.press('Space');
+  await expect(selected).toHaveCount(3);
+  await page.keyboard.press('Space');
+  await expect(selected).toHaveCount(2);
+
+  const before = await selectedIndexes();
+  await page.keyboard.press('Enter');
+  await expect(viewer()).toBeVisible();
+  expect(await selectedIndexes()).toEqual(before);
+  await closeViewerWithEsc();
+  expect(await selectedIndexes()).toEqual(before);
+  await expect(cells.nth(1)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(selected).toHaveCount(0);
 });
 
 test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () => {

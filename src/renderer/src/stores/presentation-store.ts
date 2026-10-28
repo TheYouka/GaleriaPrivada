@@ -13,7 +13,6 @@ import { cloneSettings } from '../screens/presentation/presentation-form-model';
 import { PresentationRuntime } from '../screens/presentation/presentation-runtime';
 import { useLibraryStore } from './library-store';
 import { useSelectionStore } from './selection-store';
-import { useThemeStore } from './theme-store';
 
 export interface PresentationSource {
   items: readonly MediaListItem[];
@@ -109,7 +108,6 @@ export function beginPresentation(): void {
   const runtime = new PresentationRuntime({
     items: setup.items,
     settings,
-    reducedMotion: useThemeStore.getState().reducedMotion,
     // Todas las diapositivas fallaron (§17.10): sale con el aviso que ya dio el anfitrión.
     onFailedAll: endPresentation,
     notify: (message, tone) => toast(message, tone),

@@ -1,4 +1,4 @@
-// Visor de fotos y vídeos (docs/DESIGN.md §16.1): se abre con un clic o Intro sobre un mosaico y
+// Visor de fotos y vídeos (docs/DESIGN.md §16.1): se abre con doble clic o Intro sobre un mosaico y
 // anima la foto desde él (FLIP: translate + scale + clip-path, 280 ms con ease-emphasized), cambia
 // la miniatura por el original cuando `img.decode()` termina y se cierra con la animación inversa
 // (o un fundido de 150 ms si el mosaico ya no está a la vista). Es un `role="dialog"` modal que
@@ -40,11 +40,12 @@ import { errorMessage } from '../../lib/errors-es';
 import { invoke } from '../../lib/ipc';
 import { toast } from '../../lib/toast';
 import { mediaUrl, thumbUrl } from '../../lib/vault-url';
-import { requestDelete, setItemThumbRev, useLibraryStore } from '../../stores/library-store';
+import { requestDelete, setItemThumbRev } from '../../stores/library-store';
 import { useThemeStore } from '../../stores/theme-store';
 import {
   finishViewerClose,
   setViewerCurrent,
+  useViewerItems,
   useViewerStore,
   type ViewerOrigin,
 } from '../../stores/viewer-store';
@@ -326,7 +327,7 @@ function findVisibleTile(id: Id): { rect: ViewerOrigin['rect']; radius: number }
 function ViewerDialog() {
   const theme = useTheme();
   const reduced = useReducedMotion() ?? false;
-  const items = useLibraryStore((s) => s.items);
+  const items = useViewerItems();
   const currentId = useViewerStore((s) => s.currentId);
   const origin = useViewerStore((s) => s.origin);
   const fullscreen = useThemeStore((s) => s.windowState.fullscreen);

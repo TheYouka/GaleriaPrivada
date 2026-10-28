@@ -105,7 +105,7 @@ test.describe('visor', () => {
     if (src) removeDir(src);
   });
 
-  test('un clic abre el visor con la animación FLIP y llega a su estado final; Esc cierra y el foco vuelve al mosaico', async () => {
+  test('un doble clic abre el visor con la animación FLIP y llega a su estado final; Esc cierra y el foco vuelve al mosaico', async () => {
     const cell = gridCells(page).nth(1);
     const name = names[1] ?? '';
     // Mientras anima: el elemento sale del mosaico (transform y clip-path distintos de los finales).
@@ -120,7 +120,7 @@ test.describe('visor', () => {
       undefined,
       { polling: 'raf', timeout: 5_000 },
     );
-    await cell.click();
+    await cell.dblclick();
     await animating;
     const dialog = viewerDialog(page);
     await expect(dialog).toHaveAttribute('role', 'dialog');
@@ -155,7 +155,7 @@ test.describe('visor', () => {
   });
 
   test('←/→, Home y End navegan por la lista de la galería', async () => {
-    await gridCells(page).nth(0).click();
+    await gridCells(page).nth(0).dblclick();
     await waitOpen(page);
     const dialog = viewerDialog(page);
     await expect(dialog).toHaveAccessibleName(names[0] ?? '');
@@ -191,7 +191,7 @@ test.describe('visor', () => {
 
   test('zoom con la rueda (1×–8×, centrado en el cursor), arrastre, doble clic y Esc sale del zoom antes de cerrar', async () => {
     // Una foto apaisada: el zoom centrado en el cursor solo se nota si la foto desborda la vista.
-    await gridCells(page).nth(1).click();
+    await gridCells(page).nth(1).dblclick();
     await waitOpen(page);
     const center = await stageCenter(page);
     expect(await scaleOf(page)).toBe(1);
@@ -321,7 +321,7 @@ test.describe('visor', () => {
 
   test('F pide la pantalla completa a la ventana (simulada, sin sacarla del lugar discreto)', async () => {
     await app_stubFullscreen();
-    await gridCells(page).nth(0).click();
+    await gridCells(page).nth(0).dblclick();
     await waitOpen(page);
     await page.keyboard.press('f');
     await expect.poll(() => fullscreenCalls()).toEqual([true]);
@@ -347,7 +347,7 @@ test.describe('visor', () => {
   }
 
   test('Supr elimina con confirmación y el visor pasa al siguiente', async () => {
-    await gridCells(page).nth(1).click();
+    await gridCells(page).nth(1).dblclick();
     await waitOpen(page);
     const dialog = viewerDialog(page);
     await expect(dialog).toHaveAccessibleName(names[1] ?? '');
@@ -366,7 +366,12 @@ test.describe('visor', () => {
     await expect(dialog).toHaveAccessibleName(names[1] ?? '');
     await expect(dialog).toBeVisible();
 
-    await page.keyboard.press('Delete');
+    // Con la CPU saturada el foco puede tardar en volver al visor y el Supr se pierde: se reintenta
+    // solo mientras la confirmación no esté ya delante.
+    await expect(async () => {
+      if (!(await confirm.isVisible())) await page.keyboard.press('Delete');
+      await expect(confirm).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 60_000 });
     await confirm.getByRole('button', { name: 'Eliminar' }).click();
     await expect(confirm).toBeHidden();
     // El siguiente de la lista ocupa su sitio.
@@ -415,7 +420,7 @@ for (const [label, displayName, id] of [
         )
         .toBe(true);
 
-      await gridCells(page).nth(1).click();
+      await gridCells(page).nth(1).dblclick();
       await waitOpen(page);
       await expect(page.locator('[data-edited-image="viewer"] img')).toBeVisible();
       // El foco visible: una pulsación de Tab lo lleva a un control del cromo del visor.

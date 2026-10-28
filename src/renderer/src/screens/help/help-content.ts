@@ -80,7 +80,10 @@ export interface HelpShortcutGroup {
   shortcuts: readonly HelpShortcut[];
 }
 
-/** §14.1 (atajos globales) y §14.6 (rejilla de la galería). */
+/**
+ * §14.1 (atajos globales) y §14.6 (rejilla de la galería). Las filas de clic reflejan PLAN.md nota
+ * 195: un clic siempre alterna la selección; abrir es doble clic o Intro.
+ */
 export const HELP_SHORTCUT_GROUPS: readonly HelpShortcutGroup[] = Object.freeze([
   {
     title: 'En cualquier pantalla',
@@ -101,15 +104,30 @@ export const HELP_SHORTCUT_GROUPS: readonly HelpShortcutGroup[] = Object.freeze(
       { keys: 'Inicio / Fin', action: 'Primer o último elemento de la fila' },
       { keys: 'Ctrl+Inicio / Ctrl+Fin', action: 'Primer o último elemento de todo' },
       { keys: 'Re Pág / Av Pág', action: 'Subir o bajar una página' },
-      { keys: 'Espacio', action: 'Seleccionar o quitar de la selección' },
-      { keys: 'Mayús+flechas', action: 'Ampliar la selección' },
+      { keys: 'Clic', action: 'Seleccionar o quitar de la selección' },
+      { keys: 'Doble clic o Intro', action: 'Abrir en el visor (la selección queda como estaba)' },
+      {
+        keys: 'Espacio',
+        action: 'Seleccionar o quitar de la selección el elemento con el foco',
+      },
       { keys: 'Ctrl+clic', action: 'Seleccionar o quitar de la selección' },
       { keys: 'Mayús+clic', action: 'Seleccionar el rango desde el último elemento marcado' },
+      { keys: 'Mayús+flechas', action: 'Ampliar la selección' },
       { keys: 'Ctrl+A', action: 'Seleccionar todo el resultado' },
       { keys: 'Esc', action: 'Limpiar la búsqueda o la selección' },
       { keys: 'F2', action: 'Renombrar el elemento seleccionado' },
       { keys: 'Supr', action: 'Eliminar la selección (pide confirmación)' },
       { keys: 'Tecla Menú / Mayús+F10', action: 'Abrir el menú contextual' },
+    ],
+  },
+  {
+    title: 'En el detalle de una playlist',
+    shortcuts: [
+      { keys: 'Clic', action: 'Seleccionar o quitar de la selección' },
+      { keys: 'Doble clic o Intro', action: 'Abrir en el visor (la selección queda como estaba)' },
+      { keys: 'Espacio', action: 'Marcar o desmarcar la casilla con el foco' },
+      { keys: 'Ctrl+clic / Mayús+clic', action: 'Alternar la fila / marcar el rango' },
+      { keys: 'Esc', action: 'Limpiar la selección' },
     ],
   },
   {

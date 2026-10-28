@@ -145,17 +145,13 @@ export function describeAudio(
 
 // ---- Hacia el motor ----
 
-export function schedulerSettingsOf(
-  s: PresentationPlainSettings,
-  reducedMotion: boolean,
-): SchedulerSettings {
+export function schedulerSettingsOf(s: PresentationPlainSettings): SchedulerSettings {
   return {
     transition: s.transition,
     randomPool: s.randomPool,
     transitionMs: s.transitionMs,
     slideMs: s.slideMs,
     loop: s.loop,
-    reducedMotion,
     kenBurns: s.animations,
   };
 }

@@ -1,4 +1,6 @@
-// Barra de selección (docs/DESIGN.md §14.6): visible con al menos un elemento seleccionado.
+// Barra de selección (docs/DESIGN.md §14.6): visible con al menos un elemento seleccionado (modo
+// selección, PLAN.md nota 192). Es una superposición anclada abajo de la rejilla (nota 193): al aparecer
+// no desplaza los mosaicos, así los clics seguidos siempre aciertan la tarjeta que se ve.
 // "Presentación" abre el diálogo de inicio con los elementos seleccionados en el orden de la galería.
 // "Vídeo dual" llega con F5: aparece deshabilitado (aria-disabled, enfocable) con el tooltip
 // "Disponible próximamente". "Añadir a playlist" abre un
@@ -102,7 +104,7 @@ export function SelectionBar() {
   return (
     <section
       aria-label="Selección"
-      className="mx-6 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 rounded-md border border-border-strong bg-surface px-3 py-1.5"
+      className="absolute inset-x-6 bottom-3 z-20 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 rounded-md border border-border-strong bg-bg-elevated px-3 py-1.5 shadow-md"
     >
       <p role="status" className="mr-1 text-sm font-medium text-text">
         {count === 1 ? '1 seleccionado' : `${count} seleccionados`}

@@ -9,7 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { lockAndGetNewWindow, readProfilesJson } from './helpers/launch';
 import {
   cellNames,
@@ -29,7 +29,7 @@ import {
 import {
   addSelectionToNewPlaylist,
   addSelectionToPlaylist,
-  ctrlSelect,
+  clickSelect,
   detailList,
   detailNames,
   handleOf,
@@ -66,7 +66,7 @@ test('playlists: crear desde la selección, reordenar, filtrar, música y nada e
 
     // ── Crear una playlist desde la selección (Beta y Delta; se añaden en el orden de la galería).
     const list1 = `Lista${tag}Uno`;
-    await ctrlSelect(page, [2, 0]);
+    await clickSelect(page, [2, 0]);
     await expect(page.getByText('2 seleccionados', { exact: true })).toBeVisible();
     await addSelectionToNewPlaylist(page, list1);
     await expect(page.getByText(`Se añadieron 2 elementos a «${list1}».`).first()).toBeVisible();
@@ -372,7 +372,7 @@ test('playlists: crear desde la selección, reordenar, filtrar, música y nada e
     // ── Disco: ni los nombres ni el orden aparecen en claro. Se recrea una playlist con un orden
     // conocido para buscar también sus ids concatenados.
     const lastList = `Lista${tag}Ultima`;
-    await ctrlSelect(page, [0, 1, 2]);
+    await clickSelect(page, [0, 1, 2]);
     await addSelectionToNewPlaylist(page, lastList);
     const orderIds = await playlistIdsInMain(page, lastList);
     expect(orderIds).toHaveLength(3);
@@ -413,6 +413,193 @@ test('playlists: crear desde la selección, reordenar, filtrar, música y nada e
     expect(left[0]).toMatch(/^[0-9a-f]{32}\.wav$/);
   } finally {
     // Si el test falló antes de cerrar la app, cerrarla primero (si no, Windows no deja borrar).
+    await launched.app.close().catch(() => undefined);
+    launched.cleanup();
+    removeDir(src);
+  }
+});
+
+test('detalle de playlist: modo selección con las reglas de la galería, asas intactas y visor con el orden de la playlist', async () => {
+  test.setTimeout(600_000);
+  const launched = await launchUnlocked({}, { width: 1280, height: 900 });
+  const src = newSourceDir();
+  try {
+    const { app, page } = launched;
+    const tag = randomBytes(5).toString('hex');
+    const names = ['Alfa', 'Beta', 'Gamma', 'Delta'].map((n) => `Sel${tag}${n}`);
+    const [alfa, beta, gamma, delta] = names as [string, string, string, string];
+    const paths: string[] = [];
+    for (const [i, name] of names.entries()) {
+      const path = join(src, `${name}.jpg`);
+      await writePhoto(path, i + 3, { mtime: new Date(2021 + i, 5, 10, 12) });
+      paths.push(path);
+    }
+    expect((await importAndSummarize(page, app, paths)).imported).toBe(4);
+    await expectItemCount(page, 4);
+    expect(await cellNames(page)).toEqual([delta, gamma, beta, alfa]); // orden de la galería
+
+    // La playlist con un orden distinto del de la galería: Beta, Delta, Alfa, Gamma.
+    const list = `Sel${tag}Lista`;
+    await clickSelect(page, [0, 1, 2, 3]);
+    await addSelectionToNewPlaylist(page, list);
+    const all = await invokeIpc<{ id: string; name: string }[]>(page, 'playlists:list');
+    const playlistId = all.find((p) => p.name === list)?.id ?? '';
+    const ids = await playlistIdsInMain(page, list); // delta, gamma, beta, alfa
+    await invokeIpc(page, 'playlists:reorder', {
+      id: playlistId,
+      mediaIds: [ids[2], ids[0], ids[3], ids[1]],
+    });
+    await expect.poll(() => playlistOrderInMain(page, list)).toEqual([beta, delta, alfa, gamma]);
+
+    await openPlaylistDetail(page, list);
+    await expect.poll(() => detailNames(page)).toEqual([beta, delta, alfa, gamma]);
+    const rows = detailList(page).getByRole('listitem');
+    const row = (name: string): Locator => rows.filter({ hasText: name });
+    const box = (name: string): Locator => row(name).getByRole('checkbox');
+    const marked = detailList(page).locator('li[data-selected]');
+    const viewer = page.locator('[data-viewer]');
+    const closeViewer = async (): Promise<void> => {
+      await expect(viewer).toHaveAttribute('data-viewer-state', 'open', { timeout: 10_000 });
+      await page.keyboard.press('Escape');
+      await expect(viewer).toHaveCount(0);
+    };
+
+    // ── Sin selección, un clic marca la fila (no abre) y aparece la barra con «1»; otro clic la quita.
+    await row(delta).locator('img').click();
+    await expect(marked).toHaveCount(1);
+    await expect(row(delta)).toHaveAttribute('data-selected', '');
+    await expect(selectionBar(page).getByText('1 seleccionado', { exact: true })).toBeVisible();
+    await expect(viewer).toHaveCount(0);
+    await row(delta).locator('img').click();
+    await expect(marked).toHaveCount(0);
+    await expect(selectionBar(page)).toBeHidden();
+    await expect(viewer).toHaveCount(0);
+
+    // ── Sin selección, un doble clic abre el visor con la lista de la playlist (←/→ siguen su
+    // orden) y deja la selección vacía.
+    await row(delta).locator('img').dblclick();
+    await expect(viewer).toHaveAccessibleName(delta);
+    await expect(viewer).toHaveAttribute('data-viewer-state', 'open', { timeout: 10_000 });
+    await page.keyboard.press('ArrowRight');
+    await expect(viewer).toHaveAccessibleName(alfa); // en la galería, tras Delta iría Gamma
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await expect(viewer).toHaveAccessibleName(beta);
+    await closeViewer();
+    await expect(marked).toHaveCount(0);
+
+    // ── La casilla entra en el modo selección; un clic en cualquier parte de otra fila la marca.
+    await box(beta).click();
+    await expect(box(beta)).toHaveAttribute('aria-checked', 'true');
+    await expect(selectionBar(page).getByText('1 seleccionado', { exact: true })).toBeVisible();
+    await row(alfa).locator('p').first().click();
+    await expect(marked).toHaveCount(2);
+    await expect(viewer).toHaveCount(0);
+    for (const n of names) {
+      await expect
+        .poll(() => box(n).evaluate((el) => Number.parseFloat(getComputedStyle(el).opacity)))
+        .toBe(1);
+    }
+    // Clic en el asa: no marca ni desmarca la fila.
+    await handleOf(page, gamma).click();
+    await expect(marked).toHaveCount(2);
+    await expect(row(gamma)).not.toHaveAttribute('data-selected', '');
+
+    // Ctrl+clic alterna y Mayús+clic marca el rango en el orden de la playlist (Beta..Gamma).
+    await row(delta)
+      .locator('img')
+      .click({ modifiers: ['Control'] });
+    await expect(marked).toHaveCount(3);
+    await row(delta)
+      .locator('img')
+      .click({ modifiers: ['Control'] });
+    await expect(marked).toHaveCount(2);
+    // El ancla pasa a Beta (primera fila); Mayús+clic en Gamma marca las cuatro.
+    await row(beta)
+      .locator('img')
+      .click({ modifiers: ['Control'] });
+    await expect(marked).toHaveCount(1);
+    await row(gamma)
+      .locator('img')
+      .click({ modifiers: ['Shift'] });
+    await expect(marked).toHaveCount(4);
+    await expect(selectionBar(page).getByText('4 seleccionados', { exact: true })).toBeVisible();
+
+    // ── Doble clic: abre (con la lista de la playlist) y deja la selección como estaba.
+    await row(delta).locator('img').dblclick();
+    await expect(viewer).toHaveAccessibleName(delta);
+    await closeViewer();
+    await expect(marked).toHaveCount(4);
+    await expect(box(delta)).toBeFocused();
+
+    // ── Con filas marcadas, el reorden sigue funcionando y no cambia la selección.
+    await handleOf(page, delta).focus();
+    await page.keyboard.press('Alt+ArrowUp');
+    await expect.poll(() => detailNames(page)).toEqual([delta, beta, alfa, gamma]);
+    await expect(marked).toHaveCount(4);
+    const from = await handleOf(page, gamma).boundingBox();
+    const to = await handleOf(page, delta).boundingBox();
+    if (!from || !to) throw new Error('sin cajas de los asas');
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 - 12, { steps: 4 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2 - 6, { steps: 20 });
+    await page.mouse.up();
+    await expect.poll(() => detailNames(page)).toEqual([gamma, delta, beta, alfa]);
+    await expect.poll(() => playlistOrderInMain(page, list)).toEqual([gamma, delta, beta, alfa]);
+    await expect(marked).toHaveCount(4);
+    await expect(viewer).toHaveCount(0);
+
+    // Con el teclado: Espacio levanta, Esc solo cancela el arrastre (la selección sigue).
+    await handleOf(page, alfa).focus();
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(400);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[id^="DndLiveRegion"]')).toContainText('Movimiento cancelado.');
+    expect(await detailNames(page)).toEqual([gamma, delta, beta, alfa]);
+    await expect(marked).toHaveCount(4);
+
+    // Fuera de un arrastre, Esc limpia la selección (y vuelve el modo normal).
+    await box(gamma).focus();
+    await page.keyboard.press('Escape');
+    await expect(marked).toHaveCount(0);
+    await expect(selectionBar(page)).toBeHidden();
+
+    // ── Teclado: Espacio marca la casilla enfocada, Intro abre ese elemento, Ctrl+A marca todo.
+    await box(delta).focus();
+    await page.keyboard.press('Space');
+    await expect(box(delta)).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Enter');
+    await expect(viewer).toHaveAccessibleName(delta);
+    await closeViewer();
+    await expect(marked).toHaveCount(1);
+    await page.keyboard.press('Control+A');
+    await expect(marked).toHaveCount(4);
+    await page.keyboard.press('Escape');
+    await expect(marked).toHaveCount(0);
+
+    // ── «Quitar de la playlist» por lote: solo lo marcado, y los medios siguen en la galería.
+    await box(delta).click();
+    await row(alfa).locator('img').click();
+    await expect(marked).toHaveCount(2);
+    await selectionBar(page).getByRole('button', { name: 'Quitar de la playlist' }).click();
+    await expect.poll(() => detailNames(page)).toEqual([gamma, beta]);
+    await expect.poll(() => playlistOrderInMain(page, list)).toEqual([gamma, beta]);
+    await expect(selectionBar(page)).toBeHidden();
+    await openGallery(page);
+    await expectItemCount(page, 4);
+
+    // ── «Quitar» de una fila sin selección no abre el visor ni marca nada.
+    await openPlaylistDetail(page, list);
+    await detailList(page)
+      .getByRole('button', { name: `Quitar «${beta}» de la playlist` })
+      .click();
+    await expect.poll(() => detailNames(page)).toEqual([gamma]);
+    await expect(viewer).toHaveCount(0);
+    await expect(marked).toHaveCount(0);
+  } finally {
     await launched.app.close().catch(() => undefined);
     launched.cleanup();
     removeDir(src);

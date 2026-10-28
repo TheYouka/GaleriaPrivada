@@ -9,7 +9,8 @@ import { announce } from '../lib/announce';
 import { errorMessage } from '../lib/errors-es';
 import { invoke, on } from '../lib/ipc';
 import { toast } from '../lib/toast';
-import { reloadLibrary, setPlaylistFilter, useLibraryStore } from './library-store';
+import { onMediaRemoved, reloadLibrary, setPlaylistFilter, useLibraryStore } from './library-store';
+import { createSelectionStore, EMPTY_SELECTION } from './selection-store';
 
 export type PlaylistDialog =
   /** `mediaIds`: elementos que se añaden a la playlist nueva (desde la selección de la galería). */
@@ -59,8 +60,34 @@ const INITIAL: PlaylistsState = {
 
 export const usePlaylistsStore = create<PlaylistsState>(() => INITIAL);
 
+/**
+ * Selección del detalle de la playlist abierta (PLAN.md nota 194): un almacén propio, para no mezclarla
+ * con la de la galería (que se recorta contra los resultados de su consulta y sobrevive al cambiar de
+ * pantalla). Se vacía al abrir otra playlist o cerrar la abierta y se recorta contra `detail.items`.
+ */
+export const usePlaylistSelectionStore = createSelectionStore();
+
+function clearPlaylistSelection(): void {
+  usePlaylistSelectionStore.setState({ ...EMPTY_SELECTION });
+}
+
+function trimPlaylistSelection(items: readonly MediaListItem[]): void {
+  usePlaylistSelectionStore.getState().dispatch(
+    { type: 'intersect' },
+    items.map((i) => i.id),
+  );
+}
+
+// Borrar medios desde el visor abierto sobre una playlist: salen de su detalle sin esperar a library:changed.
+onMediaRemoved((removed) => {
+  const items = usePlaylistsStore.getState().detail.items;
+  if (!items.some((i) => removed.has(i.id))) return;
+  setPlaylistDetailItems(items.filter((i) => !removed.has(i.id)));
+});
+
 export function resetPlaylists(): void {
   usePlaylistsStore.setState({ ...INITIAL });
+  clearPlaylistSelection();
 }
 
 export function playlistById(id: Id | null): PlaylistSummary | undefined {
@@ -111,10 +138,12 @@ export function subscribePlaylists(): () => void {
 }
 
 export function openPlaylist(id: Id): void {
+  clearPlaylistSelection();
   usePlaylistsStore.setState({ openId: id, detail: { ...NO_DETAIL, id } });
 }
 
 export function closePlaylist(): void {
+  clearPlaylistSelection();
   usePlaylistsStore.setState({ openId: null, detail: NO_DETAIL });
 }
 
@@ -134,11 +163,13 @@ export async function loadPlaylistDetail(id: Id): Promise<void> {
       ? { id, items: res.data.items, status: 'ready', error: null }
       : { id, items: [], status: 'error', error: res.error },
   });
+  trimPlaylistSelection(res.ok ? res.data.items : []);
 }
 
 /** Cambia los elementos mostrados (reordenar u quitar de forma optimista). */
 export function setPlaylistDetailItems(items: readonly MediaListItem[]): void {
   usePlaylistsStore.setState((s) => ({ detail: { ...s.detail, items } }));
+  trimPlaylistSelection(items);
 }
 
 // ── Diálogos ───────────────────────────────────────────────────────────────────────────────────

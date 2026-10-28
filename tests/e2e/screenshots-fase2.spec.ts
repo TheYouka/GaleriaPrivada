@@ -84,7 +84,7 @@ for (const [label, displayName, id] of [
       // Galería con elementos y dos seleccionados (el último foco queda en una celda).
       const cells = gridCells(page);
       await cells.nth(1).click({ modifiers: ['Control'] });
-      await cells.nth(3).click({ modifiers: ['Control'] });
+      await cells.nth(3).click(); // ya en modo selección: un clic simple marca
       await expect(page.getByText('2 seleccionados', { exact: true })).toBeVisible();
       await page.mouse.move(5, 5);
       await snap(page, `gallery-${label}.png`);
@@ -100,7 +100,7 @@ for (const [label, displayName, id] of [
       await expect(rename).toBeHidden();
 
       // Eliminar (Supr con dos elementos): el foco inicial está en "Cancelar".
-      await cells.nth(4).click({ modifiers: ['Control'] });
+      await cells.nth(4).click();
       await page.keyboard.press('Delete');
       const del = page.getByRole('alertdialog');
       await expect(del.getByRole('button', { name: 'Cancelar' })).toBeFocused();

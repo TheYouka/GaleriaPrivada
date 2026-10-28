@@ -9,7 +9,7 @@ import { lockAndGetNewWindow, unlockProfile } from './helpers/launch';
 import { removeDir, PASSWORD, PROFILE } from './helpers/library';
 import {
   addSelectionToNewPlaylist,
-  ctrlSelect,
+  clickSelect,
   invokeIpc,
   openGallery,
   openPlaylistDetail,
@@ -187,7 +187,7 @@ test('desde una playlist: usa su música y sus ajustes propios, y también vuelv
   test.setTimeout(120_000);
   await saveDefaults(page, BASE);
   await openGallery(page);
-  await ctrlSelect(page, [0, 2, 3]); // Foto C, Foto B, Foto A
+  await clickSelect(page, [0, 2, 3]); // Foto C, Foto B, Foto A
   await addSelectionToNewPlaylist(page, 'Vacaciones');
   const lists = await invokeIpc<{ id: string; name: string }[]>(page, 'playlists:list');
   const playlist = lists.find((p) => p.name === 'Vacaciones');
@@ -405,7 +405,8 @@ test('cambiar el volumen de la música en mitad de un fundido no produce ningún
   await openSetupFromSelection(page, [0, 1, 2, 3]);
   await startPresentation(page);
   await waitState(page, (s) => s.slideIndex === 0 && (s.musicGain ?? 0) > 0.6, 'música', 20_000);
-  // Fundido largo (5 s, el máximo): la ventana «a mitad» dura segundos y no depende de la CPU. Al vídeo\n  // la música baja; se cambia el volumen en mitad.
+  // Fundido largo (5 s, el máximo): la ventana «a mitad» dura segundos y no depende de la CPU. Al vídeo
+  // la música baja; se cambia el volumen en mitad.
   await page.keyboard.press('ArrowRight');
   await waitState(
     page,

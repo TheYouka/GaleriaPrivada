@@ -2,6 +2,10 @@
 // descripción pura de `transitions.ts`. Solo se animan `opacity` y `transform`, que se componen en
 // la GPU. Cada capa tiene dos elementos: la capa (fundido y deslizamiento) y su contenido (Ken Burns,
 // que dura D + slideMs + D y no debe pelearse con el fundido).
+//
+// Cada animate() lleva `reduceMotion: false`: ni <MotionConfig> ni prefers-reduced-motion afectan a
+// la presentación, que sigue lo que el usuario eligió (PLAN.md nota 191). Con el corte, Ken Burns
+// anima solo el contenido.
 import { animate } from 'motion';
 import type { TransitionPlan } from './transitions';
 
@@ -45,7 +49,11 @@ export class StageAnimator {
       if (incoming) this.setFrame(incoming.layer, { opacity: 1, transform: 'none' });
       if (outgoing) this.setFrame(outgoing.layer, { opacity: 0, transform: 'none' });
     } else {
-      const options = { duration: plan.durationMs / 1000, ease: plan.easing };
+      const options = {
+        duration: plan.durationMs / 1000,
+        ease: plan.easing,
+        reduceMotion: false,
+      };
       if (incoming) {
         this.track(
           to,
@@ -81,7 +89,7 @@ export class StageAnimator {
         animate(
           incoming.content,
           { transform: [kb.fromTransform, kb.toTransform] },
-          { duration: kb.durationMs / 1000, ease: 'linear' },
+          { duration: kb.durationMs / 1000, ease: 'linear', reduceMotion: false },
         ),
       );
     }

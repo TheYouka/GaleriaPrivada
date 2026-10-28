@@ -8,7 +8,12 @@
 // reproductor (`player-store`: pausa el temporizador de inactividad y mantiene la pantalla
 // encendida, D12) y los fondos animados se pausan (`App.tsx`). Todo se suelta al pausar, al acabar,
 // al salir, por un error y, desde main, al bloquear o recargar (`playback-release`).
+//
+// Movimiento: la raíz usa <MotionConfig reducedMotion="user"> (App.tsx) para el resto de la interfaz;
+// aquí un <MotionConfig reducedMotion="never"> acotado a la presentación, porque la transición y las
+// animaciones son una elección explícita del usuario (PLAN.md nota 191).
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { MotionConfig } from 'motion/react';
 import { Dialog } from 'radix-ui';
 import { Button } from '../../components/Button';
 import { cx } from '../../lib/cx';
@@ -249,87 +254,89 @@ function PresentationDialog({ active }: { active: ActivePresentation }) {
   };
 
   return (
-    <Dialog.Root open>
-      <Dialog.Portal>
-        <Dialog.Content
-          ref={contentRef}
-          data-presentation=""
-          data-presentation-fullscreen={fullscreen ? 'true' : 'false'}
-          data-paused={snap.paused ? 'true' : 'false'}
-          data-controls-visible={controlsVisible ? 'true' : 'false'}
-          aria-modal="true"
-          aria-describedby={undefined}
-          className={cx(
-            'fixed z-30 flex flex-col overflow-hidden bg-black text-text outline-none',
-            fullscreen ? 'inset-0' : 'inset-x-0 top-8 bottom-0',
-            !controlsVisible && 'cursor-none',
-          )}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            contentRef.current?.focus();
-          }}
-          // El foco vuelve al control que la inició (si sigue en pantalla).
-          onCloseAutoFocus={(e) => {
-            e.preventDefault();
-            const back = active.returnFocus;
-            if (back?.isConnected) back.focus({ preventScroll: true });
-          }}
-          // Esc cierra el panel de ajustes si está abierto y, si no, sale (§17.9).
-          onEscapeKeyDown={(e) => {
-            e.preventDefault();
-            run(
-              presentationCommand(
-                { key: 'Escape' },
-                { settingsOpen, finished: snap.finished, focus: 'none' },
-              ),
-            );
-          }}
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-          onKeyDown={onKeyDown}
-          onPointerMove={bump}
-          onPointerDown={bump}
-        >
-          <Dialog.Title className="sr-only">Presentación</Dialog.Title>
-          <p role="status" className="sr-only">
-            {navNote}
-          </p>
-          <SlideStage runtime={runtime} />
+    <MotionConfig reducedMotion="never">
+      <Dialog.Root open>
+        <Dialog.Portal>
+          <Dialog.Content
+            ref={contentRef}
+            data-presentation=""
+            data-presentation-fullscreen={fullscreen ? 'true' : 'false'}
+            data-paused={snap.paused ? 'true' : 'false'}
+            data-controls-visible={controlsVisible ? 'true' : 'false'}
+            aria-modal="true"
+            aria-describedby={undefined}
+            className={cx(
+              'fixed z-30 flex flex-col overflow-hidden bg-black text-text outline-none',
+              fullscreen ? 'inset-0' : 'inset-x-0 top-8 bottom-0',
+              !controlsVisible && 'cursor-none',
+            )}
+            onOpenAutoFocus={(e) => {
+              e.preventDefault();
+              contentRef.current?.focus();
+            }}
+            // El foco vuelve al control que la inició (si sigue en pantalla).
+            onCloseAutoFocus={(e) => {
+              e.preventDefault();
+              const back = active.returnFocus;
+              if (back?.isConnected) back.focus({ preventScroll: true });
+            }}
+            // Esc cierra el panel de ajustes si está abierto y, si no, sale (§17.9).
+            onEscapeKeyDown={(e) => {
+              e.preventDefault();
+              run(
+                presentationCommand(
+                  { key: 'Escape' },
+                  { settingsOpen, finished: snap.finished, focus: 'none' },
+                ),
+              );
+            }}
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+            onKeyDown={onKeyDown}
+            onPointerMove={bump}
+            onPointerDown={bump}
+          >
+            <Dialog.Title className="sr-only">Presentación</Dialog.Title>
+            <p role="status" className="sr-only">
+              {navNote}
+            </p>
+            <SlideStage runtime={runtime} />
 
-          {snap.finished ? <EndLayer onRestart={() => runtime.restart()} /> : null}
+            {snap.finished ? <EndLayer onRestart={() => runtime.restart()} /> : null}
 
-          {settingsOpen ? (
-            <PresentationSettingsPanel
+            {settingsOpen ? (
+              <PresentationSettingsPanel
+                settings={settings}
+                playlist={playlist}
+                onChange={changeActive}
+                onClose={closeSettings}
+              />
+            ) : null}
+
+            <PresentationControls
+              visible={controlsVisible}
+              paused={snap.paused}
+              position={(snap.index ?? 0) + 1}
+              total={snap.total}
+              fullscreen={fullscreen}
               settings={settings}
-              playlist={playlist}
-              onChange={changeActive}
-              onClose={closeSettings}
+              settingsOpen={settingsOpen}
+              onPrev={() => navigate('prev')}
+              onTogglePause={() => runtime.togglePause()}
+              onNext={() => navigate('next')}
+              onToggleMusic={toggleMusic}
+              onChangeSettings={changeActive}
+              onToggleSettings={() => setSettingsOpen((open) => !open)}
+              onToggleFullscreen={toggleFullscreen}
+              onExit={endPresentation}
+              onAudioMenuOpenChange={setAudioMenuOpen}
+              onFocusWithinChange={setFocusWithin}
+              onHoverChange={setHovering}
             />
-          ) : null}
-
-          <PresentationControls
-            visible={controlsVisible}
-            paused={snap.paused}
-            position={(snap.index ?? 0) + 1}
-            total={snap.total}
-            fullscreen={fullscreen}
-            settings={settings}
-            settingsOpen={settingsOpen}
-            onPrev={() => navigate('prev')}
-            onTogglePause={() => runtime.togglePause()}
-            onNext={() => navigate('next')}
-            onToggleMusic={toggleMusic}
-            onChangeSettings={changeActive}
-            onToggleSettings={() => setSettingsOpen((open) => !open)}
-            onToggleFullscreen={toggleFullscreen}
-            onExit={endPresentation}
-            onAudioMenuOpenChange={setAudioMenuOpen}
-            onFocusWithinChange={setFocusWithin}
-            onHoverChange={setHovering}
-          />
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </MotionConfig>
   );
 }
 

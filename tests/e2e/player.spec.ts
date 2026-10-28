@@ -123,7 +123,7 @@ test.describe('reproductor', () => {
     );
 
   async function openVideo(): Promise<void> {
-    await gridCells(page).nth(videoIndex).click();
+    await gridCells(page).nth(videoIndex).dblclick();
     await waitReady(page);
     // El vídeo empieza solo (autoplay) una vez cargado.
     await expect(player(page)).toHaveAttribute('data-playing', 'true', { timeout: 20_000 });
@@ -218,7 +218,7 @@ test.describe('reproductor', () => {
     if (src) removeDir(src);
   });
 
-  test('un clic abre el vídeo, empieza solo y pausar/reanudar con Espacio y K; el auto-bloqueo y los fondos lo notan', async () => {
+  test('un doble clic abre el vídeo, empieza solo y pausar/reanudar con Espacio y K; el auto-bloqueo y los fondos lo notan', async () => {
     await expect.poll(reasons).toEqual([]);
     await openVideo();
     const dialog = viewerDialog(page);
@@ -748,7 +748,7 @@ for (const [label, displayName, id] of [
         )
         .toBe(true);
 
-      await gridCells(page).nth(0).click();
+      await gridCells(page).nth(0).dblclick();
       await waitReady(page);
       await expect(player(page)).toHaveAttribute('data-playing', 'true');
       // Con el vídeo en marcha, las ondas animadas del fondo dejan de dibujar.

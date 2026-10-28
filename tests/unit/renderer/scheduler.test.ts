@@ -580,7 +580,8 @@ describe('scheduler: elección aleatoria de la transición', () => {
   it('se sortea UNA vez, cuando empieza la transición (no al precargar ni al cambiar ajustes)', () => {
     const seq = sequence([0.5]);
     const t = setup([photo, photo, photo], {
-      settings: { transition: 'random', randomPool: ['fade', 'slide'] },
+      // Sin «Animaciones», el sorteo es la única llamada al RNG de cada transición.
+      settings: { transition: 'random', randomPool: ['fade', 'slide'], kenBurns: false },
       rng: seq.rng,
     });
     expect(seq.calls()).toBe(0);
@@ -599,7 +600,7 @@ describe('scheduler: elección aleatoria de la transición', () => {
   it('una navegación pendiente (sin cargar) no sortea hasta que la transición empieza', () => {
     const seq = sequence([0]);
     const t = setup([photo, photo], {
-      settings: { transition: 'random' },
+      settings: { transition: 'random', kenBurns: false },
       rng: seq.rng,
       reply: (i) => (i === 1 ? 'never' : 'load'),
     });
@@ -634,16 +635,51 @@ describe('scheduler: elección aleatoria de la transición', () => {
     expect(t.ofType('transition').map((e) => e.plan.type)).toEqual(['zoom', 'zoom', 'zoom']);
   });
 
-  it('con Ken Burns en una foto se consumen tres llamadas (sorteo + dirección + módulo)', () => {
+  it('con «Animaciones» activado, cada foto consume tres llamadas (sorteo + dirección + módulo)', () => {
     const seq = sequence([0.9, 0.1, 0.1]);
     const t = setup([photo], {
       settings: { transition: 'random', randomPool: ['fade', 'kenburns'] },
       rng: seq.rng,
     });
     t.scheduler.start();
-    // 0,9 de 2 candidatos → `kenburns`; luego dirección y módulo.
-    expect(t.ofType('transition')[0].plan.type).toBe('kenburns');
+    // 0,9 de 2 candidatos → `kenburns` (se anima como fundido); luego dirección y módulo.
+    const plan = t.ofType('transition')[0].plan;
+    expect(plan).toMatchObject({ picked: 'kenburns', type: 'fade' });
+    expect(plan.kenBurns).not.toBeNull();
     expect(seq.calls()).toBe(3);
+  });
+});
+
+describe('scheduler: Ken Burns independiente del tipo (nota 191)', () => {
+  it('con los valores por defecto una foto lleva Ken Burns y un vídeo no', () => {
+    const t = setup([photo, video, photo]);
+    t.scheduler.start();
+    t.clock.advance(500 + 2000 + 500);
+    const plans = t.ofType('transition').map((e) => e.plan);
+    expect(plans[0].type).toBe('fade');
+    expect(plans[0].kenBurns).not.toBeNull();
+    expect(plans[1].kenBurns).toBeNull();
+  });
+
+  it('none con Ken Burns: corte (duración 0) y paneo; sin Ken Burns, ninguno de los dos', () => {
+    const on = setup([photo], { settings: { transition: 'none', kenBurns: true } });
+    on.scheduler.start();
+    const planOn = on.ofType('transition')[0].plan;
+    expect(planOn.durationMs).toBe(0);
+    expect(planOn.kenBurns).not.toBeNull();
+    expect(planOn.kenBurns?.durationMs).toBe(2000);
+
+    const off = setup([photo], { settings: { transition: 'none', kenBurns: false } });
+    off.scheduler.start();
+    const planOff = off.ofType('transition')[0].plan;
+    expect(planOff.durationMs).toBe(0);
+    expect(planOff.kenBurns).toBeNull();
+  });
+
+  it('una transición larga elegida se respeta tal cual (sin atajo de movimiento reducido)', () => {
+    const t = setup([photo, photo], { settings: { transition: 'slide', transitionMs: 2500 } });
+    t.scheduler.start();
+    expect(t.ofType('transition')[0].plan).toMatchObject({ type: 'slide', durationMs: 2500 });
   });
 });
 

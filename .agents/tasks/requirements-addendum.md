@@ -217,3 +217,15 @@ The user asked to replace the analog-photo-album theme. They first asked for a c
 - **Presentation and viewer.** Photo and video content are not tinted by the theme. Only the surrounding chrome is themed, as before.
 - **Verification.** Phase 6 screenshots and the functional keyboard walkthrough cover `cine` like the other themes.
 - **Open choices** (the planner recommends; the user may change later): the exact palette. Recommendation: background #09090F to #151030, accent violet #7C5CFF, lavender text accent #B7A6FF, focus ring white.
+
+## 9. Gallery click rules (user decision after Phase 4, binding; supersedes PLAN.md note 145)
+
+- **Opening an item is ALWAYS a DOUBLE CLICK**, in every mode. A single click never opens the viewer. Enter also opens the focused item (keyboard equivalent).
+- **A single click anywhere on a tile toggles that item's selection.** The user must not have to aim at the checkbox.
+  - Shift+click selects a range from the anchor.
+  - Ctrl+click toggles.
+  - Space toggles the focused item.
+- **A double click must not leave the selection changed by its first click.** It opens the item and restores the selection to what it was before the first click. Do not delay single clicks to detect a double click, so single clicks stay responsive.
+- **Selection bar and checkboxes:** the selection bar with its count appears as soon as one item is selected. Checkboxes are visible on all tiles while something is selected, and on hover or focus otherwise.
+- **Leaving selection:** Esc, "Cancelar selección", or deselecting the last item.
+- **Scope:** the same rules apply wherever tiles are selectable, including the playlist detail. Drag-to-reorder handles keep working.

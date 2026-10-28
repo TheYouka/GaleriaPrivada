@@ -210,6 +210,18 @@ export function cancelDelete(): void {
   if (!useLibraryStore.getState().deleting) useLibraryStore.setState({ deleteIds: null });
 }
 
+const removalListeners = new Set<(removed: ReadonlySet<Id>) => void>();
+
+/**
+ * Avisa de los medios borrados desde la interfaz (por ejemplo, desde el visor abierto sobre una
+ * playlist). Lo usa playlists-store para quitarlos de inmediato de su detalle sin importarlo aquí
+ * (evita un ciclo de módulos).
+ */
+export function onMediaRemoved(listener: (removed: ReadonlySet<Id>) => void): () => void {
+  removalListeners.add(listener);
+  return () => removalListeners.delete(listener);
+}
+
 /** media:delete tras la confirmación. Permanente (§12.10). */
 export async function confirmDelete(): Promise<void> {
   const ids = useLibraryStore.getState().deleteIds;
@@ -228,6 +240,7 @@ export async function confirmDelete(): Promise<void> {
   const removed = new Set(ids);
   const items = useLibraryStore.getState().items.filter((i) => !removed.has(i.id));
   useLibraryStore.setState((s) => ({ items, removedTick: s.removedTick + 1 }));
+  for (const listener of removalListeners) listener(removed);
   useSelectionStore.getState().dispatch(
     { type: 'intersect' },
     items.map((i) => i.id),

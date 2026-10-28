@@ -5,8 +5,22 @@
 //  - Los anuncios en español van por `announcements` de dnd-kit y, para Alt+↑/↓, por la región global.
 //  - Guardado optimista: al soltar se envía playlists:reorder con la permutación completa; si
 //    falla, se restaura el orden anterior (el de la DB) y se muestra un toast.
+// Selección (PLAN.md notas 192, 194 y 195, mismas reglas que la galería): un clic en cualquier parte de
+// la fila SIEMPRE alterna su casilla (Ctrl+clic alterna, Mayús+clic marca el rango en el orden de la
+// playlist). Intro (en la casilla) y el doble clic abren el visor con la lista de la playlist (el doble
+// clic deja la selección como estaba); Espacio alterna; Esc y «Cancelar selección» salen. El
+// asa, la casilla y «Quitar» llevan `data-row-control`: su clic no alterna la fila, y el asa conserva
+// el arrastre intacto. La selección es un almacén propio (`usePlaylistSelectionStore`).
 // Quitar de la playlist no borra el medio. La lista no está virtualizada (límite de 2000, §9.2).
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
 import {
   closestCenter,
   DndContext,
@@ -25,6 +39,7 @@ import {
 } from '@dnd-kit/sortable';
 import {
   ArrowLeft,
+  Check,
   Film,
   GalleryVerticalEnd,
   GripVertical,
@@ -35,7 +50,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { MediaListItem } from '@shared/types';
+import type { Id, MediaListItem } from '@shared/types';
 import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { ScreenHeading } from '../../components/ScreenHeading';
@@ -56,9 +71,16 @@ import {
   requestDeletePlaylist,
   requestRenamePlaylist,
   setPlaylistDetailItems,
+  usePlaylistSelectionStore,
   usePlaylistsStore,
 } from '../../stores/playlists-store';
 import { startFromPlaylist, usePresentationStore } from '../../stores/presentation-store';
+import {
+  tileClickAction,
+  type SelectionAction,
+  type SelectionState,
+} from '../../stores/selection-store';
+import { openViewer, useViewerStore } from '../../stores/viewer-store';
 import {
   announceMoved,
   moveId,
@@ -69,6 +91,7 @@ import {
 } from './playlist-order';
 import { PlaylistMusicDialog } from './PlaylistMusicDialog';
 import { PlaylistPresentationDialog } from './PlaylistPresentationDialog';
+import { PlaylistSelectionBar } from './PlaylistSelectionBar';
 
 /** La fila solo se mueve en vertical. */
 const restrictToVertical: Modifier = ({ transform }) => ({ ...transform, x: 0 });
@@ -82,12 +105,34 @@ interface RowProps {
   item: MediaListItem;
   index: number;
   total: number;
+  selected: boolean;
+  /** Hay filas marcadas: las casillas se ven en todas. */
+  selectionMode: boolean;
   registerHandle(id: string, el: HTMLButtonElement | null): void;
+  registerCheckbox(id: string, el: HTMLButtonElement | null): void;
   onMove(id: string, delta: number): void;
   onRemove(item: MediaListItem): void;
+  onRowClick(e: MouseEvent<HTMLLIElement>, item: MediaListItem): void;
+  onRowDoubleClick(e: MouseEvent<HTMLLIElement>, item: MediaListItem): void;
+  onToggle(item: MediaListItem): void;
+  onOpen(row: HTMLElement, item: MediaListItem): void;
 }
 
-function SortableRow({ item, index, total, registerHandle, onMove, onRemove }: RowProps) {
+function SortableRow({
+  item,
+  index,
+  total,
+  selected,
+  selectionMode,
+  registerHandle,
+  registerCheckbox,
+  onMove,
+  onRemove,
+  onRowClick,
+  onRowDoubleClick,
+  onToggle,
+  onOpen,
+}: RowProps) {
   const {
     attributes,
     listeners,
@@ -110,20 +155,61 @@ function SortableRow({ item, index, total, registerHandle, onMove, onRemove }: R
   };
 
   return (
+    // El clic en la fila es un atajo de ratón: la vía de teclado es la casilla de la fila (Espacio
+    // alterna, Intro abre), que es un botón enfocable.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
     <li
       ref={setNodeRef}
       data-media-id={item.id}
+      data-selected={selected ? '' : undefined}
+      onClick={(e) => onRowClick(e, item)}
+      onDoubleClick={(e) => onRowDoubleClick(e, item)}
+      onMouseDown={(e) => {
+        // Mayús+clic no debe marcar texto entre dos filas.
+        if (e.shiftKey) e.preventDefault();
+      }}
       style={{
         transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
         transition,
       }}
       className={cx(
-        'relative flex items-center gap-3 rounded-md border border-border bg-surface px-2 py-1.5 text-text',
+        'group relative flex cursor-pointer items-center gap-3 rounded-md border px-2 py-1.5 text-text',
+        selected ? 'border-selection-border bg-selection' : 'border-border bg-surface',
         isDragging && 'z-10 border-accent bg-surface-hover shadow-md',
       )}
     >
       <button
         type="button"
+        role="checkbox"
+        aria-checked={selected}
+        aria-label={`Seleccionar «${item.name}»`}
+        data-row-control=""
+        ref={(el) => registerCheckbox(item.id, el)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle(item);
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+          e.preventDefault();
+          const row = e.currentTarget.closest('li');
+          if (row) onOpen(row, item);
+        }}
+        className={cx(
+          'inline-flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100',
+          selected
+            ? 'border-white bg-accent opacity-100'
+            : cx('border-text-muted', selectionMode ? 'opacity-100' : 'opacity-0'),
+        )}
+      >
+        {selected ? (
+          <Check aria-hidden="true" size={14} strokeWidth={3} className="text-on-accent" />
+        ) : null}
+      </button>
+      <button
+        type="button"
+        data-row-control=""
         ref={(el) => {
           setActivatorNodeRef(el);
           registerHandle(item.id, el);
@@ -156,7 +242,9 @@ function SortableRow({ item, index, total, registerHandle, onMove, onRemove }: R
       <IconButton
         label={`Quitar «${item.name}» de la playlist`}
         icon={X}
+        data-row-control=""
         onClick={() => onRemove(item)}
+        onDoubleClick={(e) => e.stopPropagation()}
       />
     </li>
   );
@@ -176,6 +264,10 @@ export function PlaylistDetail({ id }: { id: string }) {
   const focusAfter = useRef<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const dragging = useRef(false);
+  const checkboxes = useRef(new Map<string, HTMLButtonElement>());
+  const selected = usePlaylistSelectionStore((s) => s.selected);
+  const selectionMode = selected.size > 0;
+  const closedTick = useViewerStore((s) => s.closedTick);
 
   const load = useCallback(() => loadPlaylistDetail(id), [id]);
 
@@ -198,29 +290,112 @@ export function PlaylistDetail({ id }: { id: string }) {
     handles.current.get(target)?.focus();
   }, [items]);
 
+  const ids = useMemo(() => items.map((i) => i.id), [items]);
+  const dispatchSelection = useCallback((action: SelectionAction): void => {
+    const order = usePlaylistsStore.getState().detail.items.map((i) => i.id);
+    usePlaylistSelectionStore.getState().dispatch(action, order);
+  }, []);
+
   // En el shell XMB, Esc dentro del contenido devuelve el foco a la barra de navegación: durante
-  // un arrastre con teclado, Esc solo cancela el arrastre.
+  // un arrastre con teclado, Esc solo cancela el arrastre (la rama de la selección va después de
+  // comprobarlo); fuera de un arrastre, Esc limpia la selección y no hace nada más. Ctrl+A marca todo.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
     const onKey = (e: globalThis.KeyboardEvent): void => {
-      if (dragging.current && e.key === 'Escape') e.preventDefault();
+      if (e.key === 'Escape') {
+        if (dragging.current) {
+          e.preventDefault();
+          return;
+        }
+        if (usePlaylistSelectionStore.getState().selected.size === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dispatchSelection({ type: 'escape' });
+        return;
+      }
+      if (
+        !dragging.current &&
+        e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === 'a'
+      ) {
+        e.preventDefault();
+        dispatchSelection({ type: 'all' });
+      }
     };
     list.addEventListener('keydown', onKey);
     return () => list.removeEventListener('keydown', onKey);
-  }, [status]);
+  }, [status, dispatchSelection]);
 
   const registerHandle = useCallback((itemId: string, el: HTMLButtonElement | null): void => {
     if (el) handles.current.set(itemId, el);
     else handles.current.delete(itemId);
   }, []);
+  const registerCheckbox = useCallback((itemId: string, el: HTMLButtonElement | null): void => {
+    if (el) checkboxes.current.set(itemId, el);
+    else checkboxes.current.delete(itemId);
+  }, []);
+
+  // Al cerrar el visor, el foco vuelve a la casilla de la fila que se abrió (como en la galería).
+  const lastClosedTick = useRef(closedTick);
+  useEffect(() => {
+    if (lastClosedTick.current === closedTick) return;
+    lastClosedTick.current = closedTick;
+    const closedId = useViewerStore.getState().closedId;
+    if (closedId !== null) checkboxes.current.get(closedId)?.focus({ preventScroll: true });
+  }, [closedTick]);
+
+  // Instantánea de la selección antes del primer clic de un posible doble clic (ver GalleryGrid).
+  const clickSnapshot = useRef<{ id: Id; state: SelectionState } | null>(null);
+
+  /** Abre el visor sobre la lista de la playlist (FLIP desde la miniatura de la fila). */
+  const openRow = useCallback((row: HTMLElement, item: MediaListItem): void => {
+    const img = row.querySelector('img');
+    const r = (img ?? row).getBoundingClientRect();
+    const loaded = img !== null && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+    openViewer(
+      item.id,
+      {
+        rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+        radius: img ? Number.parseFloat(getComputedStyle(img).borderTopLeftRadius) || 0 : 0,
+        aspect: loaded ? img.naturalWidth / img.naturalHeight : null,
+      },
+      'playlist',
+    );
+  }, []);
+
+  const onRowClick = (e: MouseEvent<HTMLLIElement>, item: MediaListItem): void => {
+    // Asa, casilla y «Quitar» no alternan la fila.
+    if ((e.target as HTMLElement).closest('[data-row-control]')) return;
+    const modified = e.ctrlKey || e.metaKey || e.shiftKey;
+    if (e.detail >= 2 && !modified) return;
+    const store = usePlaylistSelectionStore.getState();
+    const action = tileClickAction(
+      { ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey },
+      item.id,
+    );
+    clickSnapshot.current = {
+      id: item.id,
+      state: { selected: store.selected, anchor: store.anchor },
+    };
+    dispatchSelection(action);
+  };
+
+  const onRowDoubleClick = (e: MouseEvent<HTMLLIElement>, item: MediaListItem): void => {
+    if ((e.target as HTMLElement).closest('[data-row-control]')) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey || useViewerStore.getState().open) return;
+    const snapshot = clickSnapshot.current;
+    clickSnapshot.current = null;
+    if (snapshot?.id === item.id) dispatchSelection({ type: 'restore', state: snapshot.state });
+    openRow(e.currentTarget, item);
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const ids = useMemo(() => items.map((i) => i.id), [items]);
-
   const announcements = useMemo(
     () =>
       reorderAnnouncements({
@@ -380,7 +555,7 @@ export function PlaylistDetail({ id }: { id: string }) {
           <p className="max-w-prose text-sm text-text-muted">
             Arrastra por el asa para reordenar. Con el teclado: Tab hasta el asa, Espacio para
             levantar, flechas para mover, Espacio para soltar y Esc para cancelar. Alt+↑/↓ mueve una
-            posición.
+            posición. Un clic marca o desmarca la fila; el doble clic o Intro abre el elemento.
           </p>
           <DndContext
             sensors={sensors}
@@ -410,14 +585,22 @@ export function PlaylistDetail({ id }: { id: string }) {
                     item={item}
                     index={index}
                     total={items.length}
+                    selected={selected.has(item.id)}
+                    selectionMode={selectionMode}
                     registerHandle={registerHandle}
+                    registerCheckbox={registerCheckbox}
                     onMove={onMove}
                     onRemove={onRemove}
+                    onRowClick={onRowClick}
+                    onRowDoubleClick={onRowDoubleClick}
+                    onToggle={(row) => dispatchSelection({ type: 'toggle', id: row.id })}
+                    onOpen={openRow}
                   />
                 ))}
               </ul>
             </SortableContext>
           </DndContext>
+          <PlaylistSelectionBar playlist={playlist} items={items} />
         </>
       )}
 

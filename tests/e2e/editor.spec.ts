@@ -165,7 +165,7 @@ test.describe('editor', () => {
     expect(original.colors).toEqual(ORIGINAL);
     expect(original.width / original.height).toBeCloseTo(2, 1);
 
-    await cell.click();
+    await cell.dblclick();
     await openEditor(page);
     // Sin cambios no hay nada que guardar.
     await expect(page.getByRole('button', { name: 'Guardar' })).toHaveAttribute(
@@ -243,7 +243,7 @@ test.describe('editor', () => {
   test('las proporciones del recorte fijan el rectángulo; Cancelar y Esc descartan los cambios', async () => {
     const cell = gridCells(page).nth(1);
     const id = await mediaIdOf(cell);
-    await cell.click();
+    await cell.dblclick();
     await openEditor(page);
 
     await page.getByRole('combobox', { name: 'Proporción del recorte' }).click();
@@ -340,7 +340,7 @@ test.describe('editor', () => {
     test.setTimeout(120_000);
     const cell = gridCells(page).nth(2);
     const id = await mediaIdOf(cell);
-    await cell.click();
+    await cell.dblclick();
     await openEditor(page);
     type Gate = {
       __saveEntered?: boolean;
@@ -450,7 +450,7 @@ test('nada en claro tras editar y bloquear: ni el marcador ni los nombres', asyn
     for (const index of [0, 1]) {
       const cell = gridCells(page).nth(index);
       const id = await mediaIdOf(cell);
-      await cell.click();
+      await cell.dblclick();
       await openEditor(page);
       await page.getByRole('button', { name: 'Girar a la derecha' }).click();
       await page.getByRole('button', { name: 'Voltear verticalmente' }).click();
@@ -513,7 +513,7 @@ for (const [label, displayName, id] of [
         )
         .toBe(true);
 
-      await gridCells(page).nth(0).click();
+      await gridCells(page).nth(0).dblclick();
       await openEditor(page);
       // Un recorte con el teclado: la esquina inferior derecha, con el foco visible en esa asa.
       await tabTo(page, 'Esquina inferior derecha del recorte');

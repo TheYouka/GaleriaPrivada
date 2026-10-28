@@ -46,9 +46,7 @@ export interface SchedulerSettings {
   transitionMs: number;
   slideMs: number;
   loop: boolean;
-  /** `prefers-reduced-motion`: todo pasa a un fundido de 150 ms. */
-  reducedMotion: boolean;
-  /** «Animaciones»: si es false, Ken Burns se queda en el fundido. */
+  /** «Animaciones»: Ken Burns en las fotos, con cualquier transición (nota 191). */
   kenBurns: boolean;
 }
 
@@ -58,7 +56,6 @@ export const DEFAULT_SCHEDULER_SETTINGS: Readonly<SchedulerSettings> = {
   transitionMs: DEFAULT_PRESENTATION.transitionMs,
   slideMs: DEFAULT_PRESENTATION.slideMs,
   loop: DEFAULT_PRESENTATION.loop,
-  reducedMotion: false,
   kenBurns: true,
 };
 
@@ -478,7 +475,6 @@ export class PresentationScheduler {
       slideMs: this.slideDuration(to),
       slideKind: toKind,
       direction: p.direction,
-      reducedMotion: this.settings.reducedMotion,
       kenBurns: this.settings.kenBurns,
     });
     this.current = to;

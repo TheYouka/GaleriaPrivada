@@ -11,6 +11,9 @@
 // - el cambio de pista (`MusicQueue`) cuando una acaba o falla;
 // - los ajustes en vivo: la transición y la duración valen desde la diapositiva siguiente; el
 //   audio, al momento.
+//
+// La presentación NO lee prefers-reduced-motion (PLAN.md nota 191): la transición y las
+// animaciones son una elección explícita del usuario y se respetan tal cual.
 import type { MediaListItem, PresentationSettings } from '@shared/types';
 import { testHooksEnabled } from '../../lib/ipc';
 import { musicUrl } from '../../lib/vault-url';
@@ -54,7 +57,6 @@ export interface RuntimeSnapshot {
 export interface RuntimeDeps {
   items: readonly MediaListItem[];
   settings: PresentationSettings;
-  reducedMotion: boolean;
   /** Todas las diapositivas fallaron (§17.10): hay que salir. */
   onFailedAll(): void;
   /** Toast (la música se desactivó, una diapositiva se omitió). */
@@ -159,7 +161,7 @@ export class PresentationRuntime {
     this.setupAudio();
     const scheduler = new PresentationScheduler(
       slideSpecs(this.deps.items),
-      schedulerSettingsOf(this.settings, this.deps.reducedMotion),
+      schedulerSettingsOf(this.settings),
       { timers: this.timers, rng: this.deps.rng },
     );
     this.scheduler = scheduler;
@@ -298,7 +300,7 @@ export class PresentationRuntime {
     if (this.disposed) return;
     const prev = this.settings;
     this.settings = next;
-    this.scheduler?.updateSettings(schedulerSettingsOf(next, this.deps.reducedMotion));
+    this.scheduler?.updateSettings(schedulerSettingsOf(next));
     const audio = this.audio;
     if (audio) {
       if (prev.audioMode !== next.audioMode) audio.setAudioMode(next.audioMode);

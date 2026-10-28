@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   KEN_BURNS_DIRECTIONS,
-  REDUCED_MOTION_MS,
   TransitionPicker,
   describeLayers,
   effectiveTransition,
@@ -19,7 +18,6 @@ const base: PickRequest = {
   slideMs: 5000,
   slideKind: 'photo',
   direction: 'forward',
-  reducedMotion: false,
   kenBurns: true,
 };
 
@@ -81,12 +79,7 @@ describe('describeLayers', () => {
 });
 
 describe('effectiveTransition', () => {
-  const o = {
-    slideKind: 'photo' as const,
-    transitionMs: 700,
-    reducedMotion: false,
-    kenBurns: true,
-  };
+  const o = { transitionMs: 700 };
 
   it('0 ms equivale a none', () => {
     expect(effectiveTransition('slide', { ...o, transitionMs: 0 })).toEqual({
@@ -101,26 +94,23 @@ describe('effectiveTransition', () => {
     expect(effectiveTransition('fade', { ...o, transitionMs: 99_999 }).durationMs).toBe(3000);
   });
 
-  it('los vídeos con kenburns usan fade, con la misma duración', () => {
-    expect(effectiveTransition('kenburns', { ...o, slideKind: 'video' })).toEqual({
-      type: 'fade',
-      durationMs: 700,
-    });
+  it('kenburns se anima como fade, con la misma duración', () => {
+    expect(effectiveTransition('kenburns', o)).toEqual({ type: 'fade', durationMs: 700 });
   });
 
-  it('con las animaciones apagadas, kenburns se queda en el fundido pero slide y zoom siguen', () => {
-    expect(effectiveTransition('kenburns', { ...o, kenBurns: false }).type).toBe('fade');
-    expect(effectiveTransition('slide', { ...o, kenBurns: false }).type).toBe('slide');
-  });
-
-  it('con movimiento reducido todo es un fundido de 150 ms; none sigue siendo un corte', () => {
-    for (const t of ['fade', 'slide', 'zoom', 'kenburns'] as const) {
-      expect(effectiveTransition(t, { ...o, reducedMotion: true })).toEqual({
-        type: 'fade',
-        durationMs: REDUCED_MOTION_MS,
-      });
+  it('slide, zoom y fade se quedan como están', () => {
+    for (const t of ['fade', 'slide', 'zoom'] as const) {
+      expect(effectiveTransition(t, o)).toEqual({ type: t, durationMs: 700 });
     }
-    expect(effectiveTransition('none', { ...o, reducedMotion: true }).type).toBe('none');
+    expect(effectiveTransition('none', o)).toEqual({ type: 'none', durationMs: 0 });
+  });
+
+  it('no hay camino de movimiento reducido: el motor ni lo conoce (nota 191)', () => {
+    // La duración elegida se respeta tal cual, no se convierte en 150 ms.
+    expect(effectiveTransition('slide', { transitionMs: 2500 })).toEqual({
+      type: 'slide',
+      durationMs: 2500,
+    });
   });
 });
 
@@ -214,10 +204,10 @@ describe('kenBurnsPlan', () => {
 });
 
 describe('TransitionPicker', () => {
-  it('fade fijo no gasta el RNG', () => {
+  it('fade fijo solo gasta el RNG en el paneo (2 llamadas), nunca en el sorteo', () => {
     let calls = 0;
     const picker = new TransitionPicker(() => (calls += 1));
-    const plan = picker.next(base);
+    const plan = picker.next({ ...base, kenBurns: false });
     expect(calls).toBe(0);
     expect(plan).toMatchObject({
       requested: 'fade',
@@ -226,6 +216,9 @@ describe('TransitionPicker', () => {
       kenBurns: null,
     });
     expect(plan.easing).toEqual([0.4, 0, 0.2, 1]);
+    expect(calls).toBe(0);
+    picker.next(base);
+    expect(calls).toBe(2);
   });
 
   it('none: corte instantáneo, sin capas', () => {
@@ -240,7 +233,7 @@ describe('TransitionPicker', () => {
       calls += 1;
       return 0;
     });
-    const plan = picker.next({ ...base, setting: 'random' });
+    const plan = picker.next({ ...base, setting: 'random', kenBurns: false });
     expect(calls).toBe(1);
     expect(plan).toMatchObject({ requested: 'random', picked: 'fade', type: 'fade' });
   });
@@ -297,12 +290,80 @@ describe('TransitionPicker', () => {
     expect(plan.kenBurns?.durationMs).toBe(5000);
   });
 
-  it('movimiento reducido: fundido de 150 ms sin Ken Burns', () => {
+  it('Ken Burns es independiente del tipo: toda foto lo lleva con «Animaciones» activado', () => {
+    for (const setting of ['fade', 'slide', 'zoom', 'kenburns', 'none'] as const) {
+      const plan = new TransitionPicker(() => 0.2).next({ ...base, setting, kenBurns: true });
+      expect(plan.kenBurns, setting).not.toBeNull();
+      expect(plan.kenBurns?.durationMs, setting).toBe(plan.durationMs * 2 + base.slideMs);
+    }
+  });
+
+  it('sin «Animaciones» ninguna foto lleva Ken Burns, sea cual sea el tipo', () => {
+    for (const setting of ['fade', 'slide', 'zoom', 'kenburns', 'none'] as const) {
+      const plan = new TransitionPicker(() => 0.2).next({ ...base, setting, kenBurns: false });
+      expect(plan.kenBurns, setting).toBeNull();
+    }
+  });
+
+  it('un vídeo nunca lleva Ken Burns', () => {
+    for (const setting of ['fade', 'slide', 'zoom', 'kenburns', 'none'] as const) {
+      const plan = new TransitionPicker(() => 0.2).next({
+        ...base,
+        setting,
+        slideKind: 'video',
+        kenBurns: true,
+      });
+      expect(plan.kenBurns, setting).toBeNull();
+    }
+  });
+
+  it('none con Ken Burns: corte (sin capas, D = 0) y el paneo dura slideMs', () => {
+    const plan = new TransitionPicker(() => 0.2).next({ ...base, setting: 'none' });
+    expect(plan).toMatchObject({
+      type: 'none',
+      durationMs: 0,
+      incoming: null,
+      outgoing: null,
+      easing: null,
+    });
+    expect(plan.kenBurns?.durationMs).toBe(base.slideMs);
+  });
+
+  it('kenburns con las animaciones apagadas es un fundido simple, sin plan de paneo', () => {
     const plan = new TransitionPicker(() => 0).next({
       ...base,
       setting: 'kenburns',
-      reducedMotion: true,
+      kenBurns: false,
     });
-    expect(plan).toMatchObject({ type: 'fade', durationMs: 150, kenBurns: null });
+    expect(plan).toMatchObject({ type: 'fade', durationMs: 700, kenBurns: null });
+  });
+
+  it('la alternancia zoom-in/zoom-out solo cuenta fotos con Ken Burns', () => {
+    const picker = new TransitionPicker(() => 0.2);
+    const run = (patch: Partial<PickRequest>) => picker.next({ ...base, ...patch }).kenBurns;
+    expect(run({ setting: 'slide' })?.zoomIn).toBe(true);
+    expect(run({ slideKind: 'video' })).toBeNull();
+    expect(run({ kenBurns: false })).toBeNull();
+    expect(run({ setting: 'none' })?.zoomIn).toBe(false);
+    expect(run({ setting: 'zoom' })?.zoomIn).toBe(true);
+    expect(run({ setting: 'fade' })?.zoomIn).toBe(false);
+  });
+
+  it('consumo del RNG: 1 + 2 en random, 2 en una foto fija con animaciones, 0 si no hay paneo', () => {
+    const count = (patch: Partial<PickRequest>): number => {
+      let calls = 0;
+      new TransitionPicker(() => {
+        calls += 1;
+        return 0.2;
+      }).next({ ...base, ...patch });
+      return calls;
+    };
+    expect(count({ setting: 'random' })).toBe(3);
+    expect(count({ setting: 'random', slideKind: 'video' })).toBe(1);
+    expect(count({ setting: 'random', kenBurns: false })).toBe(1);
+    expect(count({ setting: 'slide' })).toBe(2);
+    expect(count({ setting: 'none' })).toBe(2);
+    expect(count({ setting: 'slide', slideKind: 'video' })).toBe(0);
+    expect(count({ setting: 'slide', kenBurns: false })).toBe(0);
   });
 });

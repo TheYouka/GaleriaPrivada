@@ -14,6 +14,7 @@ import { Button } from '../../components/Button';
 import { Slider } from '../../components/Slider';
 import { formatDuration } from '../../lib/format';
 import { importMusic, loadMusic, useMusicStore } from '../../stores/music-store';
+import { useThemeStore } from '../../stores/theme-store';
 import { toggleTrack } from '../playlists/playlist-order';
 import { MUSIC_UNENCRYPTED_NOTICE } from '../settings/music-preview';
 import {
@@ -352,6 +353,7 @@ export function PresentationSettingsForm({
   lastTransition,
 }: FormProps) {
   const tracks = useMusicStore((s) => s.tracks);
+  const systemReducedMotion = useThemeStore((s) => s.reducedMotion);
   const musicStatus = useMusicStore((s) => s.status);
   const withTracks = context !== 'live';
   // El diálogo de inicio y Ajustes tienen sitio para dos columnas; el panel en vivo no.
@@ -421,11 +423,17 @@ export function PresentationSettingsForm({
           ) : null}
           <SwitchField
             label="Animaciones"
-            hint="Movimiento lento (Ken Burns) en las fotos. Apagadas, el paneo se queda en un fundido."
+            hint="Movimiento lento (Ken Burns) en las fotos, con cualquier transición. Apagadas, las fotos se quedan quietas."
             checked={settings.animations}
             onCheckedChange={(animations) => onChange({ animations })}
             testId="animations-on"
           />
+          {systemReducedMotion ? (
+            <p role="note" data-reduced-motion-hint="" className="text-xs text-text-muted">
+              Tu sistema pide reducir el movimiento. Las transiciones y animaciones de la
+              presentación siguen lo que elijas aquí.
+            </p>
+          ) : null}
         </fieldset>
 
         <fieldset className={GROUP}>

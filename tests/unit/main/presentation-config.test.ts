@@ -17,6 +17,7 @@ import {
   DEFAULT_PREFS,
   PRESENTATION_PLAIN_SCHEMA,
 } from '../../../src/main/settings/settings-store';
+import { PRESENTATION_LIMITS } from '../../../src/shared/constants';
 import { DEFAULT_PRESENTATION } from '../../../src/shared/presentation';
 import type { PresentationSettings } from '../../../src/shared/types';
 import { appErrorOf } from '../helpers/crypto';
@@ -80,6 +81,15 @@ describe('DEFAULT_PRESENTATION', () => {
     // El renderer importa el objeto: ni el objeto ni su array se pueden modificar.
     expect(Object.isFrozen(DEFAULT_PRESENTATION)).toBe(true);
     expect(Object.isFrozen(DEFAULT_PRESENTATION.randomPool)).toBe(true);
+  });
+});
+
+describe('límites y valores de fábrica del movimiento (nota 191)', () => {
+  it('«Animaciones» viene activado de fábrica y la duración mínima de una foto no parpadea', () => {
+    expect(DEFAULT_PRESENTATION.animations).toBe(true);
+    // Dos cambios automáticos distan al menos slideMsMin: ≥ 1 s, o sea ≤ 1 Hz (< 3 Hz).
+    expect(PRESENTATION_LIMITS.slideMsMin).toBeGreaterThanOrEqual(1000);
+    expect(DEFAULT_PRESENTATION.slideMs).toBeGreaterThanOrEqual(PRESENTATION_LIMITS.slideMsMin);
   });
 });
 

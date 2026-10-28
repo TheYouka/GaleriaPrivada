@@ -4,7 +4,11 @@
 // Momento de la elección aleatoria (PLAN.md nota 172): el planificador pide UN plan por transición,
 // justo cuando esa transición empieza (no al precargar ni al cambiar ajustes). Con `random` se
 // consume exactamente una llamada al RNG para elegir del grupo (aunque solo quede un candidato) y,
-// solo si el resultado es Ken Burns en una foto, dos más (dirección y desplazamiento).
+// en cada foto con «Animaciones» activado, dos más (dirección y desplazamiento de Ken Burns).
+//
+// Ken Burns lo gobierna solo «Animaciones» (PLAN.md nota 191): vale con cualquier transición, también
+// con el corte, y nunca en un vídeo. La presentación NO mira `prefers-reduced-motion`: el tipo y la
+// duración de la transición y las animaciones son una elección explícita del usuario.
 import type { MediaKind, TransitionKind } from '@shared/types';
 
 export type TransitionSetting = TransitionKind | 'random' | 'none';
@@ -14,8 +18,6 @@ export type Direction = 'forward' | 'back';
 /** Número en [0, 1) como `Math.random`. */
 export type Rng = () => number;
 
-/** Con movimiento reducido, cualquier transición pasa a un fundido de esta duración (§17.3). */
-export const REDUCED_MOTION_MS = 150;
 export const MAX_TRANSITION_MS = 3000;
 export const KEN_BURNS_MAX_SCALE = 1.12;
 const DEFAULT_POOL: readonly TransitionKind[] = ['fade'];
@@ -59,7 +61,7 @@ export interface KenBurnsPlan {
 export interface TransitionPlan {
   /** Lo que pidieron los ajustes (`random` incluido). */
   requested: TransitionSetting;
-  /** Lo que salió del ajuste o del sorteo, antes de los cambios por vídeo o movimiento reducido. */
+  /** Lo que salió del ajuste o del sorteo, antes de los cambios (duración 0, Ken Burns). */
   picked: ConcreteTransition;
   /** Lo que se anima de verdad. */
   type: ConcreteTransition;
@@ -92,14 +94,13 @@ function randomIndex(rng: Rng, length: number): number {
 }
 
 export interface EffectiveOptions {
-  slideKind: MediaKind;
   transitionMs: number;
-  reducedMotion: boolean;
-  /** «Animaciones» activadas: sin ellas Ken Burns se queda en el fundido. */
-  kenBurns: boolean;
 }
 
-/** Tipo y duración reales: 0 ms = `none`; vídeo con Ken Burns = `fade`; movimiento reducido = `fade`. */
+/**
+ * Tipo y duración reales: 0 ms = `none`; `kenburns` se anima como `fade` (el movimiento de las fotos
+ * ya no depende del tipo, nota 191).
+ */
 export function effectiveTransition(
   picked: ConcreteTransition,
   o: EffectiveOptions,
@@ -108,10 +109,7 @@ export function effectiveTransition(
     ? Math.min(MAX_TRANSITION_MS, Math.max(0, o.transitionMs))
     : 0;
   if (picked === 'none' || ms <= 0) return { type: 'none', durationMs: 0 };
-  if (o.reducedMotion) return { type: 'fade', durationMs: REDUCED_MOTION_MS };
-  if (picked === 'kenburns' && (o.slideKind === 'video' || !o.kenBurns)) {
-    return { type: 'fade', durationMs: ms };
-  }
+  if (picked === 'kenburns') return { type: 'fade', durationMs: ms };
   return { type: picked, durationMs: ms };
 }
 
@@ -232,7 +230,7 @@ export interface PickRequest {
   slideMs: number;
   slideKind: MediaKind;
   direction: Direction;
-  reducedMotion: boolean;
+  /** «Animaciones»: Ken Burns en las fotos, con cualquier transición. */
   kenBurns: boolean;
 }
 
@@ -251,7 +249,7 @@ export class TransitionPicker {
     const eff = effectiveTransition(picked, req);
     const layers = describeLayers(eff.type, req.direction);
     let kenBurns: KenBurnsPlan | null = null;
-    if (eff.type === 'kenburns') {
+    if (req.kenBurns && req.slideKind === 'photo') {
       kenBurns = kenBurnsPlan(this.rng, this.kenBurnsCount % 2 === 0, eff.durationMs, req.slideMs);
       this.kenBurnsCount += 1;
     }

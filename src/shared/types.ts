@@ -232,9 +232,9 @@ export interface PresentationPlainSettings {
   slideMs: number;
   loop: boolean;
   /**
-   * «Animaciones» del diálogo de inicio: si es false, la transición `kenburns` se queda en el
-   * fundido (las otras tres cosas que se pueden apagar son `transition: 'none'`, `musicEnabled` y
-   * `loop`). PLAN.md nota 178.
+   * «Animaciones» del diálogo de inicio: Ken Burns (movimiento lento) en las fotos con cualquier
+   * transición; si es false, las fotos se quedan quietas (las otras tres cosas que se pueden apagar
+   * son `transition: 'none'`, `musicEnabled` y `loop`). PLAN.md notas 178 y 191.
    */
   animations: boolean;
   startFullscreen: boolean;

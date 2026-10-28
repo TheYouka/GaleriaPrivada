@@ -52,4 +52,18 @@ describe('Ayuda', () => {
     }
     for (const grid of ['Ctrl+A', 'F2', 'Supr', 'Esc']) expect(keys).toContain(grid);
   });
+
+  it('explica las reglas de clic: clic selecciona, doble clic o Intro abre, también en el detalle de una playlist', () => {
+    const gallery = HELP_SHORTCUT_GROUPS.find((g) => g.title === 'En la galería');
+    const playlist = HELP_SHORTCUT_GROUPS.find((g) => g.title === 'En el detalle de una playlist');
+    for (const group of [gallery, playlist]) {
+      const shortcuts = group?.shortcuts ?? [];
+      const keys = shortcuts.map((s) => s.keys);
+      for (const k of ['Clic', 'Doble clic o Intro', 'Espacio']) expect(keys).toContain(k);
+      const click = shortcuts.find((s) => s.keys === 'Clic');
+      expect(click?.action).toBe('Seleccionar o quitar de la selección');
+      const open = shortcuts.find((s) => s.keys === 'Doble clic o Intro');
+      expect(open?.action).toContain('Abrir');
+    }
+  });
 });
