@@ -11,6 +11,7 @@ import { registerAppHandlers } from './ipc/handlers/app';
 import { registerEditsHandlers } from './ipc/handlers/edits';
 import { importPathsFromTest, registerImportHandlers } from './ipc/handlers/import';
 import { registerMediaHandlers } from './ipc/handlers/media';
+import { registerMergeHandlers } from './ipc/handlers/merge';
 import { registerMusicHandlers } from './ipc/handlers/music';
 import { registerPlaylistHandlers } from './ipc/handlers/playlists';
 import { registerPresentationHandlers } from './ipc/handlers/presentation';
@@ -24,6 +25,7 @@ import { registerWindowHandlers } from './ipc/handlers/window';
 import { setSessionGate } from './ipc/register';
 import { initLog, log } from './log';
 import { Ffmpeg, resolveFfmpegPaths } from './media/ffmpeg';
+import { MergeService } from './media/merge-service';
 import { avatarFilePath, AvatarTokens } from './profiles/avatars';
 import { ProfileService } from './profiles/profile-service';
 import { ProfileStore, vaultDirOf } from './profiles/profile-store';
@@ -332,6 +334,19 @@ function start(): void {
           const win = getMainWindow();
           return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
         },
+      });
+      // Fusión de vídeos (§18): entradas por loopback, salida por pipe:1 al cifrador.
+      registerMergeHandlers({
+        service: new MergeService({
+          session: sessionManager,
+          ffmpeg,
+          events: {
+            progress: (p) => sendToMainWindow('merge:progress', p),
+            done: (d) => sendToMainWindow('merge:done', d),
+          },
+          library: libraryEvents,
+          inFlight,
+        }),
       });
       registerMusicHandlers({
         service: new MusicService({ session: sessionManager, ffmpeg, inFlight }),

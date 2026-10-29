@@ -261,6 +261,21 @@ export interface MergeRequest {
   name: string;
 }
 
+/** `merge:progress` (§10.2, §18.6 paso 2): como mucho cada 250 ms. `fraction` en [0, 1]. */
+export interface MergeProgress {
+  jobId: Id;
+  fraction: number;
+}
+
+/**
+ * `merge:done` (§18.6, §18.7). `existed: true` = ya había un vídeo idéntico y `mediaId` es el suyo.
+ * No llega si un bloqueo interrumpe la fusión (la ventana se sustituye).
+ */
+export interface MergeDone {
+  jobId: Id;
+  result: Result<{ mediaId: Id; existed: boolean }>;
+}
+
 /**
  * Ajustes → Almacenamiento (§14.9). `path` es la ubicación de la bóveda: junto con las rutas de
  * los originales no borrados (§14.6), la única ruta que ve el renderer [H3-8].

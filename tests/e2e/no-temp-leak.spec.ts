@@ -1,7 +1,8 @@
-// Sin temporales en claro fuera de la bóveda (docs/PLAN.md 2.9 y 2.13; docs/DESIGN.md §12.4 y §22).
-// La app arranca con TEMP/TMP/TMPDIR apuntando a una carpeta vacía propia; se importa un MP4 tal
-// cual, un MKV remultiplexado, un MOV convertido (ffmpeg) y fotos (libvips), y al terminar no puede
-// haber ninguna entrada nueva en esa carpeta (ni en `os.tmpdir()` de la app).
+// Sin temporales en claro fuera de la bóveda (docs/PLAN.md 2.9, 2.13 y 5.3; docs/DESIGN.md §12.4,
+// §18.6 y §22). La app arranca con TEMP/TMP/TMPDIR apuntando a una carpeta vacía propia; se importa
+// un MP4 tal cual, un MKV remultiplexado, un MOV convertido (ffmpeg) y fotos (libvips), o se fusionan
+// dos vídeos (F5), y al terminar no puede haber ninguna entrada nueva en esa carpeta (ni en
+// `os.tmpdir()` de la app).
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +19,7 @@ import {
   waitForSummary,
 } from './helpers/library';
 import { type LaunchedApp } from './helpers/launch';
+import { expectMerged, mediaIdByName, mergeAndWait, writeMergeInputs } from './helpers/merge';
 
 const TEMP_ROOT = resolve(__dirname, '..', '.tmp', 'e2e-temp');
 
@@ -69,6 +71,32 @@ test('importar MP4, MKV remultiplexado, MOV convertido y fotos no deja temporale
   await closeSummary(page);
   expect(existsSync(mov)).toBe(false);
   await expect(gridCells(page)).toHaveCount(5);
+
+  expect(listing()).toEqual(before);
+});
+
+test('fusionar dos vídeos (ffmpeg con entradas por loopback y salida por pipe:1) no deja temporales en TEMP', async () => {
+  test.setTimeout(300_000);
+  const { page, app } = launched;
+  const appTmp = await app.evaluate(({ app: electronApp }) => electronApp.getPath('temp'));
+  expect(resolve(appTmp).toLowerCase()).toBe(resolve(tempDir).toLowerCase());
+  const before = listing();
+
+  const { left, right } = writeMergeInputs(src, {
+    left: { name: 'Temp izquierdo', seconds: 6 },
+    right: { name: 'Temp derecho', seconds: 4 },
+  });
+  const counts = await importAndSummarize(page, app, [left, right]);
+  expect(counts).toEqual({ imported: 2, duplicates: 0, skipped: 0, failed: 0 });
+  const outcome = await mergeAndWait(page, {
+    leftId: await mediaIdByName(page, 'Temp izquierdo'),
+    rightId: await mediaIdByName(page, 'Temp derecho'),
+    audio: 'mix',
+    duration: 'longest',
+    name: 'Fusión sin temporales',
+  });
+  expect(expectMerged(outcome).existed).toBe(false);
+  await expect(gridCells(page)).toHaveCount(3);
 
   expect(listing()).toEqual(before);
 });

@@ -528,8 +528,8 @@ test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () =>
   await expect(cells.nth(0)).toBeFocused();
   await page.keyboard.press('Escape');
 
-  // «Presentación» abre el diálogo de inicio (Fase 4); «Vídeo dual» no está disponible todavía:
-  // deshabilitado con su tooltip.
+  // «Presentación» abre el diálogo de inicio (Fase 4); «Vídeo dual» (Fase 5) solo se habilita con
+  // exactamente dos vídeos: con un solo elemento seleccionado está deshabilitado con su tooltip.
   await cells.nth(0).click({ modifiers: ['Control'] });
   const presentation = page.getByRole('button', { name: 'Presentación' });
   await expect(presentation).not.toHaveAttribute('aria-disabled', 'true');
@@ -543,7 +543,9 @@ test('selección con el teclado: flechas, Espacio y Mayús+flechas', async () =>
   await expect(setup).toBeHidden();
   await expect(dual).toHaveAttribute('aria-disabled', 'true');
   await dual.focus();
-  await expect(page.getByRole('tooltip', { name: 'Disponible próximamente' })).toBeVisible();
+  await expect(
+    page.getByRole('tooltip', { name: 'Selecciona exactamente dos vídeos.' }),
+  ).toBeVisible();
   await page.keyboard.press('Escape');
   await cells.nth(0).click({ modifiers: ['Control'] });
   await page.keyboard.press('Escape');

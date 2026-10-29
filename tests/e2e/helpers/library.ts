@@ -253,18 +253,25 @@ export function scanForNeedles(
  * empaquetado, para probar saltos de ±10 s y búsquedas (los fixtures de 4 s no dan para eso). Se
  * importa tal cual (§12.5) y solo existe en `tests/.tmp/`.
  */
-export function writeLongVideo(path: string, seconds: number): void {
+export function writeLongVideo(
+  path: string,
+  seconds: number,
+  options: { size?: string; rate?: number; frequency?: number } = {},
+): void {
   const win = process.platform === 'win32';
   const dir = join(ROOT, 'resources', 'ffmpeg', win ? 'win-x64' : 'linux-x64');
+  const size = options.size ?? '320x180';
+  const rate = options.rate ?? 15;
+  const frequency = options.frequency ?? 440;
   execFileSync(
     join(dir, 'bin', win ? 'ffmpeg.exe' : 'ffmpeg'),
     [
       ...['-hide_banner', '-nostdin', '-v', 'error', '-y'],
-      ...['-f', 'lavfi', '-i', `testsrc2=size=320x180:rate=15:duration=${seconds}`],
-      ...['-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=48000:duration=${seconds}`],
+      ...['-f', 'lavfi', '-i', `testsrc2=size=${size}:rate=${rate}:duration=${seconds}`],
+      ...['-f', 'lavfi', '-i', `sine=frequency=${frequency}:sample_rate=48000:duration=${seconds}`],
       ...['-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '300k'],
-      ...['-g', '15', '-c:a', 'libopus', '-b:a', '64k', '-movflags', '+faststart', '-f', 'mp4'],
-      path,
+      ...['-g', String(rate), '-c:a', 'libopus', '-b:a', '64k', '-movflags', '+faststart'],
+      ...['-f', 'mp4', path],
     ],
     {
       env: win

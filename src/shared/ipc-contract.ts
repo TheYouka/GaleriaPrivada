@@ -19,6 +19,9 @@ import type {
   MediaDetail,
   MediaListItem,
   MediaQuery,
+  MergeDone,
+  MergeProgress,
+  MergeRequest,
   MusicImportResult,
   MusicTrack,
   PlaylistSummary,
@@ -86,6 +89,8 @@ export const INVOKE_CHANNELS = [
   'music:delete',
   'presentation:getConfig',
   'presentation:saveDefaults',
+  'merge:start',
+  'merge:cancel',
 ] as const;
 
 /**
@@ -105,6 +110,8 @@ export const EVENT_CHANNELS = [
   'import:confirmNeeded',
   'relocate:progress',
   'relocate:done',
+  'merge:progress',
+  'merge:done',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
@@ -281,6 +288,17 @@ interface InvokeMap {
   };
   /** U. prefs.presentationDefaults (en claro) y kv['presentation.defaultTracks'] (cifrado). */
   'presentation:saveDefaults': { req: { settings: PresentationSettings }; res: void };
+
+  // ── Vídeo dual y fusión (§10.2, §18) ──────────────────────────────────────────────────────
+  /**
+   * U. Fusiona dos vídeos `ready` lado a lado (§18.2–§18.6) en segundo plano; el resultado llega
+   * por merge:progress y merge:done. VALIDATION si `leftId === rightId`, si alguno no es un vídeo
+   * `ready` o si el lado de audio elegido no tiene audio; BUSY si ya hay una fusión activa (§12.11)
+   * o durante un traslado; FFMPEG_MISSING sin ffmpeg.
+   */
+  'merge:start': { req: MergeRequest; res: { jobId: Id } };
+  /** U. Cancela la fusión (merge:done con CANCELLED). Un id desconocido (ya terminada) se ignora. */
+  'merge:cancel': { req: { jobId: Id }; res: void };
 }
 
 /** Payload de cada evento (main → renderer, solo a la ventana actual). */
@@ -301,6 +319,10 @@ interface EventMap {
   'relocate:progress': RelocateProgress;
   /** No llega si un bloqueo interrumpe el traslado (la ventana se sustituye). */
   'relocate:done': RelocateDone;
+  /** Como mucho cada 250 ms (§18.6, paso 2). */
+  'merge:progress': MergeProgress;
+  /** No llega si un bloqueo interrumpe la fusión (§18.7: la ventana se sustituye). */
+  'merge:done': MergeDone;
 }
 
 // Comprobación en compilación: los mapas no tienen claves fuera de sus allowlists (y ReqOf/PayloadOf

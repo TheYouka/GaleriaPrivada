@@ -290,6 +290,52 @@ export function findReady(db: Db, id: Id): { mime: string; thumbId: Id | null } 
   return row ? { mime: row.mime, thumbId: row.thumb_id } : null;
 }
 
+/** Lo que la fusión (§18.2) necesita de cada entrada: solo filas `ready`. */
+export interface MergeSourceRow {
+  id: Id;
+  kind: MediaKind;
+  mime: string;
+  /** Dimensiones de visualización (rotación ya aplicada al importar). */
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  fps: number | null;
+  hasAudio: boolean;
+}
+
+/** Entrada de una fusión: la fila `ready`, o null (no existe o es de un trabajo en curso). */
+export function mergeSource(db: Db, id: Id): MergeSourceRow | null {
+  requireId(id);
+  const row = db
+    .prepare(
+      `SELECT id, kind, mime, width, height, duration_ms, fps, has_audio FROM media
+       WHERE id = ? AND state = 'ready'`,
+    )
+    .get(id) as
+    | {
+        id: string;
+        kind: MediaKind;
+        mime: string;
+        width: number | null;
+        height: number | null;
+        duration_ms: number | null;
+        fps: number | null;
+        has_audio: number | null;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: row.id,
+    kind: row.kind,
+    mime: row.mime,
+    width: row.width,
+    height: row.height,
+    durationMs: row.duration_ms,
+    fps: row.fps,
+    hasAudio: row.has_audio === 1,
+  };
+}
+
 // ── Reconciliación (§12.6) ─────────────────────────────────────────────────────────────────────
 
 export interface PendingMedia {

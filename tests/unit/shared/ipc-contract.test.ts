@@ -10,6 +10,7 @@ import {
   type ReqOf,
   type ResOf,
 } from '@shared/ipc-contract';
+import type { Result } from '@shared/errors';
 import {
   AUTO_LOCK_MINUTES,
   AVATAR_DIALOG_EXTENSIONS,
@@ -22,6 +23,7 @@ import type {
   BuiltinAvatarId,
   EditOp,
   LockReason,
+  MergeRequest,
   MusicImportResult,
   MusicTrack,
   PresentationSettings,
@@ -81,6 +83,8 @@ describe('allowlists', () => {
       'import:done',
       'import:progress',
       'library:changed',
+      'merge:done',
+      'merge:progress',
       'relocate:done',
       'relocate:progress',
       'session:locked',
@@ -134,6 +138,23 @@ describe('allowlists', () => {
       settings: PresentationSettings;
       tracks: MusicTrack[];
     }>();
+  });
+
+  it('F5: merge:start y merge:cancel, con merge:progress y merge:done (§10.2, §18.6)', () => {
+    expect(INVOKE_CHANNELS.filter((c) => c.startsWith('merge:')).sort()).toEqual([
+      'merge:cancel',
+      'merge:start',
+    ]);
+    expectTypeOf<ReqOf<'merge:start'>>().toEqualTypeOf<MergeRequest>();
+    expectTypeOf<ResOf<'merge:start'>>().toEqualTypeOf<{ jobId: string }>();
+    expectTypeOf<ReqOf<'merge:cancel'>>().toEqualTypeOf<{ jobId: string }>();
+    expectTypeOf<PayloadOf<'merge:progress'>>().toEqualTypeOf<{
+      jobId: string;
+      fraction: number;
+    }>();
+    expectTypeOf<PayloadOf<'merge:done'>['result']>().toEqualTypeOf<
+      Result<{ mediaId: string; existed: boolean }>
+    >();
   });
 
   it('[H3-8] los canales de la bóveda no aceptan rutas del renderer', () => {

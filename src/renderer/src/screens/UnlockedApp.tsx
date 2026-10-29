@@ -10,6 +10,7 @@ import { announce } from '../lib/announce';
 import { isCtrlKey, isTextInputTarget } from '../lib/keyboard';
 import { toast } from '../lib/toast';
 import { isImporting, startImport } from '../stores/import-store';
+import { resetDual } from '../stores/dual-store';
 import { subscribeLibrary } from '../stores/library-store';
 import { resetMusic } from '../stores/music-store';
 import { useNavStore } from '../stores/nav-store';
@@ -27,6 +28,8 @@ import { XmbShell } from '../themes/shells/XmbShell';
 import { useTheme } from '../themes/use-theme';
 import { CommandBar, GALLERY_SEARCH_ID, IMPORT_BUSY_TOOLTIP } from './gallery/CommandBar';
 import { DeleteDialog } from './gallery/DeleteDialog';
+import { DualVideoScreen } from './dual/DualVideoScreen';
+import { MergeDialog } from './dual/MergeDialog';
 import { galleryKindOf } from './gallery/gallery-nav';
 import { GalleryScreen } from './gallery/GalleryScreen';
 import { ImportDropZone } from './gallery/ImportDropZone';
@@ -38,7 +41,6 @@ import { PlaylistsScreen } from './playlists/PlaylistsScreen';
 import { PresentationScreen } from './presentation/PresentationScreen';
 import { PresentationSetupDialog } from './presentation/PresentationSetupDialog';
 import { Viewer } from './viewer/Viewer';
-import { PlaceholderScreen } from './PlaceholderScreen';
 import { RelocateDialog } from './settings/RelocateDialog';
 import { SettingsScreen } from './settings/SettingsScreen';
 
@@ -49,11 +51,7 @@ function Screen({ active }: { active: NavKey }) {
     case 'playlists':
       return <PlaylistsScreen />;
     case 'dual':
-      return (
-        <PlaceholderScreen title="Vídeo dual">
-          El vídeo dual llega en una fase posterior.
-        </PlaceholderScreen>
-      );
+      return <DualVideoScreen />;
     case 'help':
       return <HelpScreen />;
     default:
@@ -103,6 +101,7 @@ export function UnlockedApp() {
       resetPlaylists();
       resetMusic();
       resetPresentation();
+      resetDual();
     };
   }, []);
 
@@ -184,6 +183,8 @@ export function UnlockedApp() {
       <Viewer />
       <PresentationSetupDialog />
       <PresentationScreen />
+      {/* Fusión de vídeos (§18): sigue visible, y escuchando merge:progress/done, en cualquier pantalla. */}
+      <MergeDialog />
       {/* Traslado de la bóveda (§8.7): progreso no descartable, visible en cualquier pantalla. */}
       <RelocateDialog />
     </>

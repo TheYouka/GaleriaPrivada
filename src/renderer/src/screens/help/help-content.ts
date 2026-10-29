@@ -131,6 +131,28 @@ export const HELP_SHORTCUT_GROUPS: readonly HelpShortcutGroup[] = Object.freeze(
     ],
   },
   {
+    title: 'En el vídeo dual',
+    shortcuts: [
+      {
+        keys: 'Espacio / K',
+        action:
+          'Reproducir o pausar (los dos con controles sincronizados; si no, el lado con el foco)',
+      },
+      { keys: 'J / L o Mayús+flechas', action: 'Retroceder o avanzar 10 s' },
+      {
+        keys: 'Flecha arriba / abajo',
+        action: 'Volumen del lado con el foco (el izquierdo, si no hay)',
+      },
+      { keys: 'M', action: 'Silenciar o activar el sonido del lado con el foco' },
+      { keys: 'R', action: 'Repetir en bucle' },
+      { keys: 'Mayús+, / Mayús+.', action: 'Velocidad más lenta o más rápida' },
+      {
+        keys: 'Ctrl+flecha izquierda / derecha',
+        action: 'Mover el foco al lado izquierdo o derecho',
+      },
+    ],
+  },
+  {
     title: 'Al reordenar una playlist (sobre el asa de la fila)',
     shortcuts: [
       { keys: 'Espacio / Intro', action: 'Levantar la fila; con la fila levantada, soltarla' },

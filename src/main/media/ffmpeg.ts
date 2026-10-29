@@ -2,7 +2,7 @@
 //
 // - Único archivo de src/ que puede importar child_process (regla ESLint de §5.4, punto 10).
 // - Los procesos solo se lanzan con un FfmpegCommand, y los FfmpegCommand solo los crean los
-//   constructores de este módulo (símbolo privado). Ningún constructor acepta una ruta de salida:
+//   constructores de este módulo (símbolo privado; F5 añade mergeCommand, §18.3). Ningún constructor acepta una ruta de salida:
 //   las salidas de ffmpeg van siempre a `pipe:1` (y el progreso a `pipe:2`).
 // - Cada entrada lleva `-f <demuxer>` justo antes de su `-i` (sin autodetección) y cada comando
 //   con entrada lleva `-protocol_whitelist`: `file,pipe` para un original del usuario y
@@ -262,6 +262,126 @@ export function transcodeCommand(opts: {
     null,
     true,
     src.redact,
+  );
+}
+
+/** Audio de la fusión ya resuelto (§18.3): `mix` solo si los dos lados tienen audio. */
+export type MergeAudioGraph = 'left' | 'right' | 'mix' | 'none';
+
+export interface MergeCommandOptions {
+  /** Entrada 0 (izquierda) y 1 (derecha): objetos de la bóveda por el loopback. */
+  left: LoopbackInput;
+  right: LoopbackInput;
+  /** `H` de §18.2: par, entre 2 y 1080. */
+  height: number;
+  /** `FPS` de §18.2 (0 < FPS ≤ 60); se escribe con 3 decimales. */
+  fps: number;
+  /** `D` de §18.2 en segundos; se escribe con 3 decimales. */
+  durationS: number;
+  /** `Δ` de §18.2 en segundos (≥ 0); solo se usa con `pad`. */
+  deltaS: number;
+  /** Lado al que se añade `tpad` (el más corto con duration = longest), o null. */
+  pad: 'left' | 'right' | null;
+  audio: MergeAudioGraph;
+}
+
+const AUDIO_GRAPH: Readonly<Record<MergeAudioGraph, string>> = Object.freeze({
+  left: ';[0:a:0]aresample=48000,apad[a]',
+  right: ';[1:a:0]aresample=48000,apad[a]',
+  mix: ';[0:a:0]aresample=48000[a0];[1:a:0]aresample=48000[a1];[a0][a1]amix=inputs=2:duration=longest:normalize=1,apad[a]',
+  none: '',
+});
+
+/** `<GRAFO>` de §18.3 (escala a `H`, hstack y el audio elegido). */
+export function mergeFilterGraph(opts: MergeCommandOptions): string {
+  const pad = `,tpad=stop_mode=clone:stop_duration=${opts.deltaS.toFixed(3)}`;
+  const chain = (input: 0 | 1, side: 'left' | 'right', label: string): string =>
+    `[${input}:v]scale=-2:${opts.height}:flags=bicubic,setsar=1,fps=${opts.fps.toFixed(3)},` +
+    `format=yuv420p${opts.pad === side ? pad : ''}[${label}]`;
+  return (
+    `${chain(0, 'left', 'l')};${chain(1, 'right', 'r')};[l][r]hstack=inputs=2:shortest=1[v]` +
+    AUDIO_GRAPH[opts.audio]
+  );
+}
+
+/**
+ * Fusión de dos vídeos de la bóveda (§18.3, línea de comandos exacta): las dos entradas por el
+ * loopback (`-seekable 1 -f <demuxer> -i http://127.0.0.1:…`), VP9 + Opus (nunca H.264, §19) en MP4
+ * fragmentado por pipe:1 (§18.4) y progreso por pipe:2. Sin timeout (cancelable).
+ */
+export function mergeCommand(opts: MergeCommandOptions): FfmpegCommand {
+  if (opts.left?.kind !== 'loopback' || opts.right?.kind !== 'loopback') {
+    throw new RangeError('la fusión solo lee por loopback');
+  }
+  const { height, fps, durationS, deltaS } = opts;
+  if (!Number.isInteger(height) || height < 2 || height > 1080 || height % 2 !== 0) {
+    throw new RangeError('altura inválida');
+  }
+  if (!Number.isFinite(fps) || fps <= 0 || fps > 60) throw new RangeError('fps inválido');
+  if (!Number.isFinite(durationS) || durationS <= 0) throw new RangeError('duración inválida');
+  if (!Number.isFinite(deltaS) || deltaS < 0) throw new RangeError('Δ inválido');
+  if (opts.pad !== null && opts.pad !== 'left' && opts.pad !== 'right') {
+    throw new RangeError('pad inválido');
+  }
+  if (!(opts.audio in AUDIO_GRAPH)) throw new RangeError('audio inválido');
+  const left = inputArgs(opts.left);
+  const right = inputArgs(opts.right);
+  const withAudio = opts.audio !== 'none';
+  return command(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-nostdin',
+      '-v',
+      'error',
+      '-progress',
+      'pipe:2',
+      '-nostats',
+      '-protocol_whitelist',
+      'http,tcp,pipe',
+      '-seekable',
+      '1',
+      ...left.args,
+      '-seekable',
+      '1',
+      ...right.args,
+      '-filter_complex',
+      mergeFilterGraph(opts),
+      '-map',
+      '[v]',
+      ...(withAudio ? ['-map', '[a]'] : ['-an']),
+      '-t',
+      durationS.toFixed(3),
+      '-c:v',
+      'libvpx-vp9',
+      '-deadline',
+      'good',
+      '-cpu-used',
+      '5',
+      '-row-mt',
+      '1',
+      '-crf',
+      '32',
+      '-b:v',
+      '0',
+      '-pix_fmt',
+      'yuv420p',
+      '-force_key_frames',
+      'expr:gte(t,n_forced*4)',
+      ...(withAudio ? ['-c:a', 'libopus', '-b:a', '160k', '-ac', '2'] : []),
+      '-map_metadata',
+      '-1',
+      '-map_chapters',
+      '-1',
+      '-f',
+      'mp4',
+      '-movflags',
+      '+frag_keyframe+empty_moov+default_base_moof',
+      'pipe:1',
+    ],
+    null,
+    true,
+    null,
   );
 }
 

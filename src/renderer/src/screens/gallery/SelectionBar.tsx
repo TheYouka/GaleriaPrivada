@@ -2,8 +2,9 @@
 // selección, PLAN.md nota 192). Es una superposición anclada abajo de la rejilla (nota 193): al aparecer
 // no desplaza los mosaicos, así los clics seguidos siempre aciertan la tarjeta que se ve.
 // "Presentación" abre el diálogo de inicio con los elementos seleccionados en el orden de la galería.
-// "Vídeo dual" llega con F5: aparece deshabilitado (aria-disabled, enfocable) con el tooltip
-// "Disponible próximamente". "Añadir a playlist" abre un
+// "Vídeo dual" abre la pantalla de vídeo dual (Fase 5) y solo está habilitado con EXACTAMENTE dos
+// vídeos seleccionados (izquierdo = el primero en el orden de la galería); si no, aparece
+// deshabilitado (aria-disabled, enfocable) con el tooltip que lo explica. "Añadir a playlist" abre un
 // menú con las playlists existentes y "Nueva playlist…"; "Quitar de la playlist" solo aparece con un
 // filtro de playlist; los elementos se añaden en el orden de la galería. "Renombrar" solo con un elemento; "Eliminar" pide confirmación (el borrado
 // es permanente).
@@ -13,6 +14,7 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { Tooltip } from '../../components/Tooltip';
 import { cx } from '../../lib/cx';
+import { openDual } from '../../stores/dual-store';
 import { requestDelete, requestRename, useLibraryStore } from '../../stores/library-store';
 import {
   addToPlaylist,
@@ -22,19 +24,7 @@ import {
 } from '../../stores/playlists-store';
 import { startFromGallery, usePresentationStore } from '../../stores/presentation-store';
 import { useSelectionStore } from '../../stores/selection-store';
-
-export const COMING_SOON = 'Disponible próximamente';
-
-function SoonButton({ icon: Icon, children }: { icon: typeof Play; children: string }) {
-  return (
-    <Tooltip content={COMING_SOON}>
-      <Button size="sm" aria-disabled="true" className={cx('cursor-not-allowed px-2 opacity-50')}>
-        <Icon aria-hidden="true" size={14} strokeWidth={1.75} />
-        {children}
-      </Button>
-    </Tooltip>
-  );
-}
+import { DUAL_NEEDS_TWO, dualPair } from './dual-pair';
 
 const MENU_CONTENT =
   'z-50 max-h-80 min-w-56 overflow-y-auto rounded-md border border-border bg-bg-elevated p-1 text-text shadow-md';
@@ -97,6 +87,7 @@ export function SelectionBar() {
   const presentationLoading = usePresentationStore((s) => s.loading);
   const count = selected.size;
   if (count === 0) return null;
+  const pair = dualPair(items, selected);
 
   const only = count === 1 ? items.find((i) => selected.has(i.id)) : undefined;
   const clear = (): void => useSelectionStore.getState().dispatch({ type: 'escape' }, []);
@@ -142,7 +133,19 @@ export function SelectionBar() {
         <Pencil aria-hidden="true" size={14} strokeWidth={1.75} />
         Renombrar
       </Button>
-      <SoonButton icon={Columns2}>Vídeo dual</SoonButton>
+      <Tooltip content={DUAL_NEEDS_TWO} enabled={pair === null}>
+        <Button
+          size="sm"
+          aria-disabled={pair === null ? 'true' : undefined}
+          className={cx('px-2', pair === null && 'cursor-not-allowed opacity-50')}
+          onClick={() => {
+            if (pair) void openDual(pair[0].id, pair[1].id);
+          }}
+        >
+          <Columns2 aria-hidden="true" size={14} strokeWidth={1.75} />
+          Vídeo dual
+        </Button>
+      </Tooltip>
       <Button
         size="sm"
         variant="danger"

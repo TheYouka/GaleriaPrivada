@@ -128,6 +128,15 @@ export const LOG_EVENTS = [
   'relocate.pending-cleanup',
   'vault.located',
   'vault.locate-rejected',
+  // Fusión de vídeos (§18.6, §18.7; F5)
+  'merge.started',
+  'merge.done',
+  'merge.existed',
+  'merge.failed',
+  'merge.cancelled',
+  'merge.interrupted',
+  'merge.thumb-failed',
+  'merge.cleanup-failed',
   // Fases posteriores ya citadas en el diseño
   'protocol.integrity',
 ] as const;

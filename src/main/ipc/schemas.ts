@@ -20,6 +20,7 @@ import {
   IDS_MAX,
   IMPORT_PATHS_MAX,
   MEDIA_NAME_MAX,
+  MERGE_NAME_MAX,
   MUSIC_TITLE_MAX,
   PASSWORD_MAX_BYTES,
   PASSWORD_MIN_BYTES,
@@ -33,7 +34,13 @@ import {
 } from '@shared/constants';
 import type { AnyInvokeChannel, ReqOf } from '@shared/ipc-contract';
 import { AVAILABLE_THEME_IDS, THEME_IDS, type ThemeId } from '@shared/themes';
-import type { AvatarInput, EditOp, MediaQuery, PresentationSettings } from '@shared/types';
+import type {
+  AvatarInput,
+  EditOp,
+  MediaQuery,
+  MergeRequest,
+  PresentationSettings,
+} from '@shared/types';
 import { GALLERY_SORT_SCHEMA, PRESENTATION_PLAIN_SCHEMA } from '../settings/settings-store';
 
 // ── Ayudantes ──────────────────────────────────────────────────────────────────────────────────
@@ -164,6 +171,17 @@ export const editOpSchema: z.ZodType<EditOp> = z.discriminatedUnion('t', [
     .refine((c) => c.y + c.h <= 1 + CROP_TOLERANCE, { message: 'crop-y', path: ['h'] }),
 ]);
 
+/** MergeRequest (§10.3): dos ids distintos, opciones cerradas y nombre de 1–255 code points. */
+export const mergeRequestSchema: z.ZodType<MergeRequest> = z
+  .strictObject({
+    leftId: idSchema,
+    rightId: idSchema,
+    audio: z.enum(['left', 'right', 'mix', 'none']),
+    duration: z.enum(['shortest', 'longest']),
+    name: text(1, MERGE_NAME_MAX),
+  })
+  .refine((r) => r.leftId !== r.rightId, { message: 'same-video', path: ['rightId'] });
+
 // ── Canales ────────────────────────────────────────────────────────────────────────────────────
 
 export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
@@ -271,4 +289,8 @@ export const SCHEMAS: { [C in AnyInvokeChannel]: z.ZodType<ReqOf<C>> } = {
 
   'presentation:getConfig': z.strictObject({ playlistId: idSchema.optional() }),
   'presentation:saveDefaults': z.strictObject({ settings: presentationSettingsSchema }),
+
+  // §10.3: leftId ≠ rightId; que los dos sean vídeos `ready` lo comprueba merge-service en la DB.
+  'merge:start': mergeRequestSchema,
+  'merge:cancel': z.strictObject({ jobId: idSchema }),
 };
