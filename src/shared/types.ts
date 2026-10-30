@@ -1,6 +1,7 @@
 // Tipos compartidos (docs/DESIGN.md §10.1). Son tipos puros: este archivo lo empaquetan main, el
 // preload y el renderer. Los tipos de fases posteriores ya están declarados para que el contrato
 // IPC sea estable.
+import type { MERGE_RESOLUTIONS } from './constants';
 import type { Result } from './errors';
 import type { ThemeId } from './themes';
 
@@ -253,11 +254,16 @@ export interface PresentationSettings extends PresentationPlainSettings {
   trackIds: Id[];
 }
 
+/** 'auto' o una de las alturas fijas de MERGE_RESOLUTIONS. */
+export type MergeResolution = (typeof MERGE_RESOLUTIONS)[number];
+
 export interface MergeRequest {
   leftId: Id;
   rightId: Id;
   audio: 'left' | 'right' | 'mix' | 'none';
   duration: 'shortest' | 'longest';
+  /** `'auto'` = altura común de §18.2; si no, la altura de salida en px (lista cerrada, nota 209). */
+  resolution: MergeResolution;
   name: string;
 }
 

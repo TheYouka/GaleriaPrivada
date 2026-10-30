@@ -115,7 +115,10 @@ describe('SCHEMAS', () => {
     const schema = SCHEMAS['prefs:set'];
     expect(schema.safeParse({ themeId: 'ps3', autoLockMinutes: 1 }).success).toBe(true);
     expect(schema.safeParse({ themeId: null, colorScheme: null }).success).toBe(true);
-    expect(schema.safeParse({ themeId: 'xbox' }).success).toBe(false); // aún no disponible (F6)
+    for (const themeId of ['xbox', 'macos', 'cine']) {
+      expect(schema.safeParse({ themeId }).success).toBe(true); // disponibles desde F6 (6.2)
+    }
+    expect(schema.safeParse({ themeId: 'album' }).success).toBe(false); // id retirado
     expect(schema.safeParse({ autoLockMinutes: 3 }).success).toBe(false);
     expect(schema.safeParse({ gallerySort: { field: 'position', dir: 'asc' } }).success).toBe(
       false,

@@ -78,6 +78,7 @@ for (const c of CASES) {
       rightId,
       audio: c.audio,
       duration: c.duration,
+      resolution: 'auto',
       name: c.name,
     });
     const merged = expectMerged(outcome);

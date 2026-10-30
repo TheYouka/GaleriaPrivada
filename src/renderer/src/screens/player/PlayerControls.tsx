@@ -2,7 +2,7 @@
 // los rangos ya cargados y un tooltip con el tiempo, −10 s/+10 s, tiempo, volumen y silencio,
 // velocidad (menú 0,25×–2×), bucle y pantalla completa. Solo los básicos: sin subtítulos. Todo usa los
 // tokens del tema (cromo); el vídeo no. Los atajos los resuelve VideoPlayer.
-import { useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
   FastForward,
   Maximize,
@@ -86,8 +86,16 @@ export function PlayerControls({
   onFocusWithinChange,
   onHoverChange,
 }: PlayerControlsProps) {
-  // Mientras se arrastra la barra se muestra la posición del puntero y no la del vídeo.
+  // Mientras se arrastra la barra con el puntero se muestra la posición del puntero y no la del
+  // vídeo. Con el teclado (Inicio/Fin) Radix no avisa del final del gesto en un orden fiable (llama a
+  // onValueCommit antes que a onValueChange o no lo llama), así que solo se guarda `scrub` durante un
+  // arrastre real (PLAN.md nota 205).
   const [scrub, setScrub] = useState<number | null>(null);
+  const dragging = useRef(false);
+  const endDrag = (): void => {
+    dragging.current = false;
+    setScrub(null);
+  };
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
   const barValue = scrub ?? toBarValue(time, duration);
   const shownTime = scrub === null ? time : fromBarValue(scrub, duration);
@@ -140,12 +148,16 @@ export function PlayerControls({
             max={BAR_RESOLUTION}
             step={1}
             disabled={!(duration > 0)}
+            onPointerDown={() => {
+              dragging.current = true;
+            }}
+            onPointerUp={endDrag}
             onValueChange={(v) => {
               const value = v[0] ?? 0;
-              setScrub(value);
+              if (dragging.current) setScrub(value);
               onSeekTo(fromBarValue(value, duration));
             }}
-            onValueCommit={() => setScrub(null)}
+            onValueCommit={endDrag}
             onKeyDown={onBarKeyDown}
             onPointerMove={onBarPointerMove}
             onPointerLeave={() => setHover(null)}

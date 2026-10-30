@@ -2,14 +2,23 @@
 // pausa con la ventana oculta o minimizada.
 import { describe, expect, it } from 'vitest';
 import { isBackgroundPaused } from '@renderer/themes/background-paused';
+import { AA_TEXT, contrastRatio, parseColor, luminance } from '@renderer/themes/contrast';
 import {
   backingSize,
   drawWaves,
+  FrameBudget,
   FrameLoop,
+  hourBrightness,
+  WAVES_FRAME_BUDGET_MS,
   WAVES_MAX_FPS,
+  WAVES_MIN_BRIGHTNESS,
+  WAVES_MONTH_COLORS,
+  wavesColorsAt,
+  wavesExtremes,
   type FrameScheduler,
   type WavesContext,
 } from '@renderer/themes/backgrounds/waves';
+import { PS3_TOKENS } from '@renderer/themes/tokens/ps3';
 
 /** rAF falso: guarda el callback pendiente; `advance` lo ejecuta con el reloj indicado. */
 class FakeScheduler implements FrameScheduler {
@@ -142,6 +151,65 @@ describe('fondo de ondas', () => {
     calls.length = 0;
     drawWaves(ctx, 640, 384, 1000);
     expect(calls).not.toEqual(first);
+  });
+});
+
+describe('color por mes y brillo por hora (§15.7)', () => {
+  it('hay 12 colores propios, todos distintos', () => {
+    expect(WAVES_MONTH_COLORS).toHaveLength(12);
+    expect(new Set(WAVES_MONTH_COLORS.map((m) => m.bottom)).size).toBe(12);
+  });
+
+  it('el brillo va de 0,75 (madrugada) a 1,0 (hacia las 13:00)', () => {
+    expect(hourBrightness(13)).toBeCloseTo(1, 6);
+    expect(hourBrightness(1)).toBeCloseTo(WAVES_MIN_BRIGHTNESS, 6);
+    for (let h = 0; h < 24; h += 0.25) {
+      expect(hourBrightness(h)).toBeGreaterThanOrEqual(WAVES_MIN_BRIGHTNESS - 1e-9);
+      expect(hourBrightness(h)).toBeLessThanOrEqual(1 + 1e-9);
+    }
+  });
+
+  it('wavesColorsAt toma el color del mes local y lo oscurece según la hora', () => {
+    const noon = wavesColorsAt(new Date(2026, 0, 15, 13, 0));
+    expect(noon).toEqual(WAVES_MONTH_COLORS[0]);
+    const night = wavesColorsAt(new Date(2026, 0, 15, 1, 0));
+    expect(luminance(parseColor(night.bottom))).toBeLessThan(luminance(parseColor(noon.bottom)));
+    // Otro mes, otro color.
+    expect(wavesColorsAt(new Date(2026, 8, 15, 13, 0))).toEqual(WAVES_MONTH_COLORS[8]);
+    for (let month = 0; month < 12; month += 1) {
+      expect(wavesColorsAt(new Date(2026, month, 15, 13, 0))).toEqual(WAVES_MONTH_COLORS[month]);
+    }
+  });
+
+  it('en cualquier mes y hora el texto atenuado cumple AA sobre el color más claro posible', () => {
+    const [darkest, brightest] = wavesExtremes();
+    const muted = PS3_TOKENS.dark['text-muted'];
+    expect(contrastRatio(muted, brightest)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(luminance(parseColor(darkest))).toBeLessThanOrEqual(
+      Math.min(...WAVES_MONTH_COLORS.map((m) => luminance(parseColor(m.top)))),
+    );
+    for (const m of WAVES_MONTH_COLORS) {
+      expect(contrastRatio(muted, m.bottom)).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+});
+
+describe('FrameBudget (≤ 3 ms por fotograma)', () => {
+  it('si el dibujo se pasa del presupuesto, reduce el detalle (hasta ×8) y lo recupera', () => {
+    const budget = new FrameBudget(WAVES_FRAME_BUDGET_MS, 10);
+    expect(budget.stepScale).toBe(1);
+    for (let i = 0; i < 10; i += 1) budget.record(WAVES_FRAME_BUDGET_MS + 1);
+    expect(budget.stepScale).toBe(2);
+    for (let i = 0; i < 100; i += 1) budget.record(10);
+    expect(budget.stepScale).toBe(8);
+    for (let i = 0; i < 100; i += 1) budget.record(0.2);
+    expect(budget.stepScale).toBe(1);
+  });
+
+  it('dentro del presupuesto no cambia nada', () => {
+    const budget = new FrameBudget(WAVES_FRAME_BUDGET_MS, 10);
+    for (let i = 0; i < 100; i += 1) budget.record(WAVES_FRAME_BUDGET_MS * 0.8);
+    expect(budget.stepScale).toBe(1);
   });
 });
 

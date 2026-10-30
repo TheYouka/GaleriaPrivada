@@ -64,6 +64,7 @@ const request = {
   rightId: 'R',
   audio: 'mix',
   duration: 'shortest',
+  resolution: 'auto',
   name: 'Fusión de prueba',
 } as const;
 

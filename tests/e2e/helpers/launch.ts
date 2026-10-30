@@ -188,7 +188,10 @@ export async function createProfile(page: Page, name: string, password: string):
 /** Abre el desbloqueo del perfil y entra con la contraseña. */
 export async function unlockProfile(page: Page, name: string, password: string): Promise<void> {
   await page.getByRole('button', { name, exact: true }).click();
-  const dialog = page.getByRole('dialog', { name });
+  // Diálogo modal; en Cristal (selector `login`) el mismo formulario va en línea bajo el avatar.
+  const dialog = page
+    .getByRole('dialog', { name })
+    .or(page.getByRole('group', { name: `Contraseña de ${name}` }));
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Contraseña', { exact: true }).fill(password);
   await dialog.getByLabel('Contraseña', { exact: true }).press('Enter');

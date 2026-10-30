@@ -1,6 +1,9 @@
 // Barra de selección (docs/DESIGN.md §14.6): visible con al menos un elemento seleccionado (modo
 // selección, PLAN.md nota 192). Es una superposición anclada abajo de la rejilla (nota 193): al aparecer
-// no desplaza los mosaicos, así los clics seguidos siempre aciertan la tarjeta que se ve.
+// no desplaza los mosaicos, así los clics seguidos siempre aciertan la tarjeta que se ve. Para no
+// crecer hacia arriba y tapar contenido (nota 193), la barra se queda siempre en UNA fila: cuando
+// el ancho no basta para los textos, los botones pasan a solo icono (container query `.g-selbar` de
+// styles/themes.css; el nombre accesible y el `title` siguen siendo el texto).
 // "Presentación" abre el diálogo de inicio con los elementos seleccionados en el orden de la galería.
 // "Vídeo dual" abre la pantalla de vídeo dual (Fase 5) y solo está habilitado con EXACTAMENTE dos
 // vídeos seleccionados (izquierdo = el primero en el orden de la galería); si no, aparece
@@ -37,9 +40,9 @@ function AddToPlaylistMenu({ ids }: { ids: readonly string[] }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <Button size="sm" className="px-2">
+        <Button size="sm" className="px-2" title="Añadir a playlist">
           <ListPlus aria-hidden="true" size={14} strokeWidth={1.75} />
-          Añadir a playlist
+          <span className="g-selbar-label">Añadir a playlist</span>
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -95,7 +98,8 @@ export function SelectionBar() {
   return (
     <section
       aria-label="Selección"
-      className="absolute inset-x-6 bottom-3 z-20 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 rounded-md border border-border-strong bg-bg-elevated px-3 py-1.5 shadow-md"
+      data-extra={filterPlaylist !== null ? 'true' : undefined}
+      className="g-selbar absolute inset-x-6 bottom-3 z-20 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 rounded-md border border-border-strong bg-bg-elevated px-3 py-1.5 shadow-md"
     >
       <p role="status" className="mr-1 text-sm font-medium text-text">
         {count === 1 ? '1 seleccionado' : `${count} seleccionados`}
@@ -103,17 +107,19 @@ export function SelectionBar() {
       <Button
         size="sm"
         className="px-2"
+        title="Presentación"
         disabled={presentationLoading}
         onClick={() => void startFromGallery()}
       >
         <Play aria-hidden="true" size={14} strokeWidth={1.75} />
-        Presentación
+        <span className="g-selbar-label">Presentación</span>
       </Button>
       <AddToPlaylistMenu ids={items.filter((i) => selected.has(i.id)).map((i) => i.id)} />
       {filterPlaylist !== null ? (
         <Button
           size="sm"
           className="px-2"
+          title="Quitar de la playlist"
           onClick={() =>
             void removeFromPlaylist({ id: filterPlaylist, name: filterPlaylistName ?? '' }, [
               ...selected,
@@ -121,21 +127,23 @@ export function SelectionBar() {
           }
         >
           <ListMinus aria-hidden="true" size={14} strokeWidth={1.75} />
-          Quitar de la playlist
+          <span className="g-selbar-label">Quitar de la playlist</span>
         </Button>
       ) : null}
       <Button
         size="sm"
         className="px-2"
+        title="Renombrar"
         disabled={!only}
         onClick={() => only && requestRename(only)}
       >
         <Pencil aria-hidden="true" size={14} strokeWidth={1.75} />
-        Renombrar
+        <span className="g-selbar-label">Renombrar</span>
       </Button>
       <Tooltip content={DUAL_NEEDS_TWO} enabled={pair === null}>
         <Button
           size="sm"
+          title={pair === null ? undefined : 'Vídeo dual'}
           aria-disabled={pair === null ? 'true' : undefined}
           className={cx('px-2', pair === null && 'cursor-not-allowed opacity-50')}
           onClick={() => {
@@ -143,17 +151,18 @@ export function SelectionBar() {
           }}
         >
           <Columns2 aria-hidden="true" size={14} strokeWidth={1.75} />
-          Vídeo dual
+          <span className="g-selbar-label">Vídeo dual</span>
         </Button>
       </Tooltip>
       <Button
         size="sm"
         variant="danger"
         className="px-2"
+        title="Eliminar"
         onClick={() => requestDelete([...selected])}
       >
         <Trash2 aria-hidden="true" size={14} strokeWidth={1.75} />
-        Eliminar
+        <span className="g-selbar-label">Eliminar</span>
       </Button>
       <IconButton
         label="Cancelar selección"

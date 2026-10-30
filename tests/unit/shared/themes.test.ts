@@ -22,29 +22,34 @@ describe('catálogo de temas', () => {
       xbox: 'Mosaico',
       ps3: 'Ondas',
       macos: 'Cristal',
-      album: 'Álbum',
+      cine: 'Cine',
     });
   });
 
-  it('F1 ofrece "Clásico" (predeterminado) y el stub de "Ondas"', () => {
+  it('los cinco temas están disponibles y "Clásico" es el predeterminado', () => {
     expect(DEFAULT_THEME_ID).toBe('fotos');
-    expect(AVAILABLE_THEME_IDS).toEqual(['fotos', 'ps3']);
+    expect(AVAILABLE_THEME_IDS).toEqual(['fotos', 'xbox', 'ps3', 'macos', 'cine']);
   });
 
   it('esquemas admitidos de §15.2', () => {
     expect(getThemeEntry('fotos').schemes).toEqual(['light', 'dark']);
     expect(getThemeEntry('ps3').schemes).toEqual(['dark']);
-    expect(getThemeEntry('album').schemes).toEqual(['light']);
+    expect(getThemeEntry('xbox').schemes).toEqual(['dark']);
+    expect(getThemeEntry('macos').schemes).toEqual(['light', 'dark']);
+    expect(getThemeEntry('cine').schemes).toEqual(['dark']);
   });
 
   it('un esquema no admitido cae en el primero de schemes (§15.4)', () => {
     expect(resolveScheme('ps3', 'light')).toBe('dark');
     expect(resolveScheme('fotos', 'dark')).toBe('dark');
-    expect(resolveScheme('album', 'dark')).toBe('light');
+    expect(resolveScheme('cine', 'light')).toBe('dark');
+    expect(resolveScheme('macos', 'light')).toBe('light');
   });
 
   it('isThemeId solo acepta los ids del catálogo', () => {
     expect(isThemeId('ps3')).toBe(true);
+    expect(isThemeId('cine')).toBe(true);
+    expect(isThemeId('album')).toBe(false);
     expect(isThemeId('Ondas')).toBe(false);
     expect(isThemeId('FOTOS')).toBe(false);
     expect(isThemeId(undefined)).toBe(false);

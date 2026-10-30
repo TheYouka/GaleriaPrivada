@@ -2,7 +2,11 @@
 // tercio superior (←/→ cambia de categoría con un deslizamiento de 250 ms, inmediato con movimiento
 // reducido), columna de subelementos (↑/↓) y Enter abre la pantalla en el panel de contenido,
 // translúcido sobre las ondas. Esc o Retroceso en el contenido devuelven el foco a la barra XMB.
-// F6 lo completa.
+// El deslizamiento de la fila y el escalado del icono de la categoría actual (styles/themes.css, con
+// los tokens de movimiento) desaparecen con movimiento reducido: queda la barra indicadora y el anillo
+// de foco (docs/DESIGN.md §15.11). La categoría actual queda en una columna fija: las anteriores se ven
+// a su izquierda hasta donde cabe la ventana y el resto sale por el borde (←, Inicio y los atajos
+// globales llegan a todas).
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion } from 'motion/react';
 import { SkipLink } from '../../components/SkipLink';
@@ -109,7 +113,7 @@ export function XmbShell({ nav, active, onNavigate, commandBar, children }: Shel
       <nav aria-label="Navegación principal" className="absolute inset-y-0 left-0 w-[25rem]">
         <motion.ul
           aria-label="Categorías"
-          className="absolute top-4 left-[10.5rem] flex"
+          className="absolute top-4 left-[13.5rem] flex"
           animate={{ x: -focus.category * CATEGORY_WIDTH }}
           transition={{ duration: reducedMotion ? 0 : 0.25, ease: [0.25, 0.1, 0.25, 1] }}
         >
@@ -134,12 +138,15 @@ export function XmbShell({ nav, active, onNavigate, commandBar, children }: Shel
                   }
                   onKeyDown={onKeyDown}
                   onClick={() => openCategory(i)}
+                  data-selected={selected ? 'true' : 'false'}
                   className={cx(
-                    'flex w-28 flex-col items-center gap-2 rounded-md px-2 py-2 text-text transition-opacity',
+                    'g-xmb-category flex w-28 flex-col items-center gap-2 rounded-md px-2 py-2 text-text',
                     selected ? 'opacity-100' : 'opacity-70',
                   )}
                 >
-                  <Icon aria-hidden="true" size={selected ? 44 : 34} strokeWidth={1.5} />
+                  <span className="g-xmb-icon flex h-12 items-center">
+                    <Icon aria-hidden="true" size={36} strokeWidth={1.5} />
+                  </span>
                   <span className={cx('text-sm', selected && 'font-bold')}>{category.label}</span>
                 </button>
               </li>
@@ -148,7 +155,7 @@ export function XmbShell({ nav, active, onNavigate, commandBar, children }: Shel
         </motion.ul>
         <ul
           aria-label={nav[focus.category]?.label}
-          className="absolute top-36 left-[11.5rem] flex w-52 flex-col gap-1"
+          className="absolute top-36 left-[11.75rem] flex w-48 flex-col gap-1"
         >
           {items.map((item, row) => {
             const current = item.key === active;

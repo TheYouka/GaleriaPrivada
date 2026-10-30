@@ -92,10 +92,10 @@ export interface MotionPreset {
 }
 
 export type ShellKind = 'sidebar' | 'pivot' | 'xmb' | 'vibrancy' | 'topbar';
-export type TitlebarKind = 'fluent' | 'xbox' | 'xmb' | 'traffic-lights' | 'album';
-export type BackgroundKind = 'mica' | 'solid' | 'waves' | 'wallpaper' | 'paper';
-export type TileKind = 'rounded' | 'flat' | 'xmb' | 'vibrancy' | 'polaroid';
-export type PickerKind = 'fluent' | 'tiles' | 'xmb-row' | 'login' | 'polaroid';
+export type TitlebarKind = 'fluent' | 'xbox' | 'xmb' | 'traffic-lights' | 'cine';
+export type BackgroundKind = 'mica' | 'solid' | 'waves' | 'wallpaper' | 'gradient';
+export type TileKind = 'rounded' | 'flat' | 'xmb' | 'vibrancy' | 'poster';
+export type PickerKind = 'fluent' | 'tiles' | 'xmb-row' | 'login' | 'showcase';
 
 /** §15.1. Los esquemas que el tema no admite no tienen tokens ni extremos. */
 export interface ThemeDefinition {

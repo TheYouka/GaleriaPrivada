@@ -1,6 +1,7 @@
 // «Crear vídeo fusionado» (docs/DESIGN.md §18.1, §18.2 y §18.7): dos vídeos lado a lado en uno nuevo,
 // con audio izquierdo, derecho, mezcla o ninguno y la duración del más corto o del más largo. La
-// resolución de salida la calcula main (altura común, §18.2): aquí solo se muestra. Mientras se crea
+// resolución se elige («Automática» = altura común de §18.2, o 360, 480, 720 y 1080 px; PLAN.md nota
+// 209) y main la valida y la calcula; aquí solo se muestra el tamaño resultante. Mientras se crea
 // se ve el progreso con «Cancelar fusión» (ni Esc ni un clic fuera cierran el diálogo). Los errores se
 // muestran con el mensaje de su código (merge-model.ts). Se monta en UnlockedApp para que
 // `merge:progress` y `merge:done` no se pierdan al cambiar de pantalla.
@@ -29,9 +30,12 @@ import {
   MERGE_AUDIO_OPTIONS,
   MERGE_DURATION_OPTIONS,
   mergeOutputSize,
+  mergeResolutionOptions,
   percentOf,
+  resolutionOfChoice,
   type MergeAudio,
   type MergeDuration,
+  type MergeResolutionChoice,
 } from './merge-model';
 
 const EXISTED_MESSAGE = 'Ya existía un vídeo idéntico';
@@ -99,10 +103,11 @@ function MergeBody({ left, right }: { left: MediaDetail; right: MediaDetail }) {
     defaultMergeAudio(left.hasAudio, right.hasAudio),
   );
   const [duration, setDuration] = useState<MergeDuration>('shortest');
+  const [resolution, setResolution] = useState<MergeResolutionChoice>('auto');
   const [name, setName] = useState(() => defaultMergeName(new Date()));
   const [nameTouched, setNameTouched] = useState(false);
 
-  const size = mergeOutputSize(left, right);
+  const size = mergeOutputSize(left, right, resolutionOfChoice(resolution));
   const trimmed = name.trim();
   const nameError =
     trimmed.length === 0
@@ -114,7 +119,14 @@ function MergeBody({ left, right }: { left: MediaDetail; right: MediaDetail }) {
   const submit = (): void => {
     setNameTouched(true);
     if (nameError) return;
-    void startMerge({ leftId: left.id, rightId: right.id, audio, duration, name: trimmed });
+    void startMerge({
+      leftId: left.id,
+      rightId: right.id,
+      audio,
+      duration,
+      resolution: resolutionOfChoice(resolution),
+      name: trimmed,
+    });
   };
 
   const inputs = (
@@ -252,10 +264,19 @@ function MergeBody({ left, right }: { left: MediaDetail; right: MediaDetail }) {
         onChange={setDuration}
         columns={1}
       />
+      <Choices<MergeResolutionChoice>
+        legend="Resolución de salida"
+        value={resolution}
+        options={mergeResolutionOptions(left, right)}
+        onChange={setResolution}
+        columns={1}
+      />
       {size ? (
         <p className="text-sm text-text-muted" data-merge-size={formatSize(size)}>
-          <span className="font-medium text-text">Resolución de salida:</span> {formatSize(size)}{' '}
-          px. Los dos vídeos se escalan a la misma altura (la del más bajo, hasta 1080 px).
+          <span className="font-medium text-text">Tamaño del vídeo:</span> {formatSize(size)} px.{' '}
+          {resolution === 'auto'
+            ? 'Los dos vídeos se escalan a la misma altura (la del más bajo, hasta 1080 px).'
+            : `Los dos vídeos se escalan a ${size.height} px de alto.`}
         </p>
       ) : null}
       <TextField

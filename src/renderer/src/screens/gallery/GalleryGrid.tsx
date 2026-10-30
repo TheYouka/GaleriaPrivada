@@ -5,6 +5,8 @@
 // ese elemento (nunca abre); con ≥ 1 marcado, la casilla se ve en todos y aparece la barra. Ctrl+clic
 // alterna, Mayús+clic marca el rango, Espacio alterna el enfocado; Intro y el doble clic abren (el
 // doble clic deja la selección como estaba antes de su primer clic, sin retrasar ningún clic).
+// El estilo del mosaico (`flat`, `xmb`, `vibrancy`, `poster`) es solo CSS por tema (`.g-tile` en
+// styles/themes.css, 6.4): el DOM, los clics y el teclado son los mismos en todos.
 import {
   useCallback,
   useEffect,
@@ -372,6 +374,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                           role="gridcell"
                           data-index={index}
                           data-media-id={item.id}
+                          data-name={item.name}
                           aria-selected={isSelected}
                           aria-label={cellLabel(item)}
                           tabIndex={index === active ? 0 : -1}
@@ -383,7 +386,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                             if (e.shiftKey) e.preventDefault();
                           }}
                           onKeyDown={(e) => onCellKeyDown(e, index)}
-                          className="group relative shrink-0 overflow-hidden rounded-tile bg-tile-placeholder"
+                          className="g-tile group relative shrink-0 overflow-hidden rounded-tile bg-tile-placeholder"
                           style={{ width: tile, height: tile }}
                         >
                           <img
@@ -394,7 +397,7 @@ export function GalleryGrid({ items, size, grouping }: GalleryGridProps) {
                             className="size-full object-cover"
                           />
                           {item.kind === 'video' ? (
-                            <span className="pointer-events-none absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs text-white">
+                            <span className="g-tile-badge pointer-events-none absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs text-white">
                               <Film aria-hidden="true" size={12} />
                               {item.durationMs === null ? 'Vídeo' : formatDuration(item.durationMs)}
                             </span>

@@ -13,7 +13,9 @@ import {
   MERGE_BUSY_MESSAGE,
   mergeErrorMessage,
   mergeOutputSize,
+  mergeResolutionOptions,
   percentOf,
+  resolutionOfChoice,
 } from '@renderer/screens/dual/merge-model';
 import { filterVideos, normalizeSearch, PICKER_LIMIT } from '@renderer/screens/dual/picker-model';
 import { dualPair, DUAL_NEEDS_TWO } from '@renderer/screens/gallery/dual-pair';
@@ -104,6 +106,49 @@ describe('mergeOutputSize (misma fórmula que merge-service.ts)', () => {
     expect(mergeOutputSize({ width: 10, height: 10 }, { width: null, height: null })).toBeNull();
     expect(mergeOutputSize({ width: 0, height: 10 }, { width: 10, height: 10 })).toBeNull();
     expect(mergeOutputSize({ width: 10, height: 1 }, { width: 10, height: 10 })).toBeNull();
+  });
+
+  it('con una resolución elegida, los dos lados se escalan a esa altura', () => {
+    const l = { width: 320, height: 180 };
+    const r = { width: 240, height: 180 };
+    expect(mergeOutputSize(l, r, 'auto')).toEqual({ width: 560, height: 180 });
+    expect(mergeOutputSize(l, r, 360)).toEqual({ width: 1120, height: 360 });
+    expect(mergeOutputSize(l, r, 1080)).toEqual({ width: 3360, height: 1080 });
+    expect(mergeOutputSize(null, r, 720)).toBeNull();
+  });
+
+  it('opciones de resolución: Automática (recomendada) y 360/480/720/1080; amplía lo que pasa del más alto', () => {
+    const labels = (lh: number, rh: number): string[] =>
+      mergeResolutionOptions({ height: lh }, { height: rh }).map((o) => o.label);
+    expect(mergeResolutionOptions({ height: 180 }, { height: 180 }).map((o) => o.value)).toEqual([
+      'auto',
+      '360',
+      '480',
+      '720',
+      '1080',
+    ]);
+    expect(labels(180, 180)).toEqual([
+      'Automática (recomendada)',
+      '360 px (amplía la imagen)',
+      '480 px (amplía la imagen)',
+      '720 px (amplía la imagen)',
+      '1080 px (amplía la imagen)',
+    ]);
+    // El más alto manda: con 480 y 360 de alto, 480 no amplía.
+    expect(labels(360, 480)).toEqual([
+      'Automática (recomendada)',
+      '360 px',
+      '480 px',
+      '720 px (amplía la imagen)',
+      '1080 px (amplía la imagen)',
+    ]);
+    expect(labels(2160, 1080).slice(1)).toEqual(['360 px', '480 px', '720 px', '1080 px']);
+  });
+
+  it('resolutionOfChoice: auto o la altura como número', () => {
+    expect(resolutionOfChoice('auto')).toBe('auto');
+    expect(resolutionOfChoice('360')).toBe(360);
+    expect(resolutionOfChoice('1080')).toBe(1080);
   });
 
   it('formatSize y percentOf', () => {

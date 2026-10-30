@@ -27,7 +27,6 @@ function Frame() {
   const videoPlaying = usePlayerStore((s) => s.playing);
   // Los fondos animados se pausan mientras hay una presentación en pantalla (§15.7, §17.7).
   const presentationActive = usePresentationStore((s) => s.active !== null);
-  const titlebar = def.titlebar === 'xmb' ? 'xmb' : 'fluent';
 
   return (
     <div className="grid h-full grid-rows-[2rem_minmax(0,1fr)] font-sans text-text">
@@ -40,7 +39,7 @@ function Frame() {
         {status === 'unlocked' ? <UnlockedApp /> : status === 'locked' ? <ProfilesFlow /> : null}
       </div>
       <Titlebar
-        variant={titlebar}
+        variant={def.titlebar}
         onLock={status === 'unlocked' ? lockSession : undefined}
         className="row-start-1"
       />

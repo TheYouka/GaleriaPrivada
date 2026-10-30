@@ -20,7 +20,9 @@ import { constants as fsConstants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { Readable } from 'node:stream';
+import { MERGE_RESOLUTIONS } from '@shared/constants';
 import { AppErrorException, type ErrorCode } from '@shared/errors';
+import type { MergeResolution } from '@shared/types';
 import { log } from '../log';
 
 export type FfmpegTool = 'ffmpeg' | 'ffprobe';
@@ -272,8 +274,13 @@ export interface MergeCommandOptions {
   /** Entrada 0 (izquierda) y 1 (derecha): objetos de la bóveda por el loopback. */
   left: LoopbackInput;
   right: LoopbackInput;
-  /** `H` de §18.2: par, entre 2 y 1080. */
+  /** `H` de §18.2 (la altura «Automática»): par, entre 2 y 1080. */
   height: number;
+  /**
+   * Resolución elegida (nota 209): 'auto' usa `height`; si no, una altura de la lista cerrada
+   * MERGE_RESOLUTIONS (cualquier otro valor lanza RangeError).
+   */
+  resolution: MergeResolution;
   /** `FPS` de §18.2 (0 < FPS ≤ 60); se escribe con 3 decimales. */
   fps: number;
   /** `D` de §18.2 en segundos; se escribe con 3 decimales. */
@@ -292,11 +299,18 @@ const AUDIO_GRAPH: Readonly<Record<MergeAudioGraph, string>> = Object.freeze({
   none: '',
 });
 
+/** Altura de salida: `height` con 'auto'; si no, la elegida (ya validada contra la lista cerrada). */
+export function mergeOutputHeight(
+  opts: Pick<MergeCommandOptions, 'height' | 'resolution'>,
+): number {
+  return opts.resolution === 'auto' ? opts.height : opts.resolution;
+}
+
 /** `<GRAFO>` de §18.3 (escala a `H`, hstack y el audio elegido). */
 export function mergeFilterGraph(opts: MergeCommandOptions): string {
   const pad = `,tpad=stop_mode=clone:stop_duration=${opts.deltaS.toFixed(3)}`;
   const chain = (input: 0 | 1, side: 'left' | 'right', label: string): string =>
-    `[${input}:v]scale=-2:${opts.height}:flags=bicubic,setsar=1,fps=${opts.fps.toFixed(3)},` +
+    `[${input}:v]scale=-2:${mergeOutputHeight(opts)}:flags=bicubic,setsar=1,fps=${opts.fps.toFixed(3)},` +
     `format=yuv420p${opts.pad === side ? pad : ''}[${label}]`;
   return (
     `${chain(0, 'left', 'l')};${chain(1, 'right', 'r')};[l][r]hstack=inputs=2:shortest=1[v]` +
@@ -316,6 +330,9 @@ export function mergeCommand(opts: MergeCommandOptions): FfmpegCommand {
   const { height, fps, durationS, deltaS } = opts;
   if (!Number.isInteger(height) || height < 2 || height > 1080 || height % 2 !== 0) {
     throw new RangeError('altura inválida');
+  }
+  if (!(MERGE_RESOLUTIONS as readonly unknown[]).includes(opts.resolution)) {
+    throw new RangeError('resolución inválida');
   }
   if (!Number.isFinite(fps) || fps <= 0 || fps > 60) throw new RangeError('fps inválido');
   if (!Number.isFinite(durationS) || durationS <= 0) throw new RangeError('duración inválida');

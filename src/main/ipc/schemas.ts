@@ -21,6 +21,7 @@ import {
   IMPORT_PATHS_MAX,
   MEDIA_NAME_MAX,
   MERGE_NAME_MAX,
+  MERGE_RESOLUTIONS,
   MUSIC_TITLE_MAX,
   PASSWORD_MAX_BYTES,
   PASSWORD_MIN_BYTES,
@@ -178,6 +179,8 @@ export const mergeRequestSchema: z.ZodType<MergeRequest> = z
     rightId: idSchema,
     audio: z.enum(['left', 'right', 'mix', 'none']),
     duration: z.enum(['shortest', 'longest']),
+    // Lista cerrada (nota 209): 'auto' o 360, 480, 720, 1080; nunca un número cualquiera.
+    resolution: z.literal(MERGE_RESOLUTIONS),
     name: text(1, MERGE_NAME_MAX),
   })
   .refine((r) => r.leftId !== r.rightId, { message: 'same-video', path: ['rightId'] });

@@ -1,6 +1,6 @@
 // Selector de temas (docs/DESIGN.md §15.8): RadioGroup de tarjetas con su ThemePreview; elegir una
-// aplica el tema al momento y las flechas mueven la selección. Muestra los temas implementados en
-// esta versión (F1: Clásico y Ondas; F6 añade los otros tres). Cada tarjeta tiene un id estable para
+// aplica el tema al momento y las flechas mueven la selección. Muestra los 5 temas (Clásico, Mosaico,
+// Ondas, Cristal y Cine; 6.4), cada uno con la maqueta de su shell. Cada tarjeta tiene un id estable para
 // devolverle el foco si el cambio de tema cambia el shell.
 import { Check } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';

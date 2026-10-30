@@ -60,6 +60,12 @@ export const MEDIA_NAME_MAX = 255;
 export const PLAYLIST_NAME_MAX = 100;
 export const MUSIC_TITLE_MAX = 200;
 export const MERGE_NAME_MAX = 255;
+/**
+ * Resolución de salida de la fusión (PLAN.md nota 209): `'auto'` = la altura común calculada por
+ * main (§18.2) o una de estas alturas fijas. Lista cerrada: main no acepta ningún otro número.
+ */
+export const MERGE_RESOLUTION_HEIGHTS = [360, 480, 720, 1080] as const;
+export const MERGE_RESOLUTIONS = ['auto', ...MERGE_RESOLUTION_HEIGHTS] as const;
 export const SEARCH_MAX = 200;
 /** dateFrom/dateTo: enteros entre 0 y este valor (9999-12-31T23:59:59.999Z). */
 export const DATE_MAX_MS = 253402300799999;

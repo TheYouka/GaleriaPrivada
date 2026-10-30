@@ -117,6 +117,7 @@ function req(over: Partial<MergeRequest> = {}): MergeRequest {
     rightId: ID_R,
     audio: 'mix',
     duration: 'shortest',
+    resolution: 'auto',
     name: 'Fusión',
     ...over,
   };
@@ -303,6 +304,7 @@ describe('argumentos exactos de §18.3: 4 opciones de audio × 2 duraciones', ()
       deltaS: 0,
       pad: null,
       audio: 'mix' as const,
+      resolution: 'auto' as const,
     };
     expect(Object.isFrozen(mergeCommand(base))).toBe(true);
     expect(Object.isFrozen(mergeCommand(base).args)).toBe(true);
@@ -322,6 +324,66 @@ describe('argumentos exactos de §18.3: 4 opciones de audio × 2 duraciones', ()
     expect(args.at(-1)).toBe('pipe:1');
     expect(args).not.toContain('-y');
     expect(args.join(' ')).not.toMatch(/libx264|libopenh264|h264|-passlogfile|-pass /);
+  });
+});
+
+describe('resolución elegible (nota 209): Automática, 360, 480, 720 y 1080', () => {
+  const chain = (input: 0 | 1, label: string, h: number): string =>
+    `[${input}:v]scale=-2:${h}:flags=bicubic,setsar=1,fps=30.000,format=yuv420p[${label}]`;
+
+  it.each([360, 480, 720, 1080] as const)(
+    '%i px: argumentos exactos con scale=-2:%i en las dos entradas (también si amplía la imagen)',
+    (h) => {
+      const graph = `${chain(0, 'l', h)};${chain(1, 'r', h)};${STACK}${A_MIX}`;
+      expect(argsFor({ resolution: h })).toEqual(expected(graph, '12.000', true));
+      const p = mergeParams(req({ resolution: h }), LEFT, RIGHT);
+      expect(p).toMatchObject({ height: h, autoHeight: 180, resolution: h });
+      // Ancho = suma de los dos escalados a h (anchos pares).
+      expect(p.widths).toEqual([scaledWidth(320, 180, h), scaledWidth(240, 180, h)]);
+      expect(p.width).toBe(p.widths[0] + p.widths[1]);
+      expect(p.height % 2).toBe(0);
+      expect(p.height).toBeLessThanOrEqual(1080);
+    },
+  );
+
+  it('Automática es la altura común de siempre y da los mismos argumentos que antes', () => {
+    const p = mergeParams(req({ resolution: 'auto' }), LEFT, RIGHT);
+    expect(p).toMatchObject({ height: 180, autoHeight: 180, resolution: 'auto' });
+    expect(argsFor({ resolution: 'auto' })).toEqual(expected(SHORT + A_MIX, '12.000', true));
+    // Una elección fija no depende de las alturas de los vídeos.
+    const tall = mergeParams(
+      req({ resolution: 480 }),
+      row({ id: ID_L, width: 1080, height: 1920 }),
+      row({ id: ID_R, width: 1920, height: 1080 }),
+    );
+    expect(tall).toMatchObject({ height: 480, autoHeight: 1080 });
+  });
+
+  it('mergeParams rechaza cualquier valor fuera de la lista con VALIDATION { reason: resolution }', () => {
+    for (const resolution of [0, 90, 240, 540, 1081, 2160, 720.5, NaN, '720', 'high', null]) {
+      expect(
+        appErrorOf(() => mergeParams(req({ resolution: resolution as never }), LEFT, RIGHT)),
+      ).toEqual({ code: 'VALIDATION', details: { reason: 'resolution' } });
+    }
+  });
+
+  it('el constructor congelado rechaza una resolución fuera de la lista (y deja pasar las cinco)', () => {
+    const base = {
+      left: { kind: 'loopback' as const, url: URLS.left, demuxer: 'mov' as const },
+      right: { kind: 'loopback' as const, url: URLS.right, demuxer: 'mov' as const },
+      height: 180,
+      fps: 30,
+      durationS: 12,
+      deltaS: 0,
+      pad: null,
+      audio: 'mix' as const,
+    };
+    for (const resolution of ['auto', 360, 480, 720, 1080] as const) {
+      expect(Object.isFrozen(mergeCommand({ ...base, resolution }))).toBe(true);
+    }
+    for (const resolution of [0, 90, 540, 1081, 720.5, '720', 'high', undefined]) {
+      expect(() => mergeCommand({ ...base, resolution: resolution as never })).toThrow(RangeError);
+    }
   });
 });
 
@@ -411,6 +473,16 @@ describe('VALIDATION de las entradas (§10.3)', () => {
     expect(schema.safeParse({ ...req(), name: '   ' }).success).toBe(false);
     expect(schema.safeParse({ ...req(), name: 'x'.repeat(256) }).success).toBe(false);
     expect(schema.safeParse({ ...req(), extra: 1 }).success).toBe(false);
+    // La resolución es obligatoria y de lista cerrada (nota 209): ningún otro valor pasa.
+    const withoutResolution: Partial<MergeRequest> = req();
+    delete withoutResolution.resolution;
+    expect(schema.safeParse(withoutResolution).success).toBe(false);
+    for (const resolution of ['auto', 360, 480, 720, 1080]) {
+      expect(schema.safeParse({ ...req(), resolution }).success).toBe(true);
+    }
+    for (const resolution of [0, 90, 240, 540, 1081, 2160, 720.5, -720, NaN, '720', 'high', null]) {
+      expect(schema.safeParse({ ...req(), resolution }).success).toBe(false);
+    }
     expect(schema.safeParse({ ...req(), leftId: 'no-es-un-id' }).success).toBe(false);
     expect(schema.parse({ ...req(), name: '  Fusio\u0301n  ' }).name).toBe('Fusión');
     expect(SCHEMAS['merge:cancel'].safeParse({ jobId: ID_L }).success).toBe(true);
@@ -972,7 +1044,36 @@ describe.skipIf(!haveFfmpeg)('fusión real con el ffmpeg empaquetado', () => {
     expect(vaultFiles(b.h.vaultDir).objects).toEqual(objects);
     expect(vaultFiles(b.h.vaultDir).tmp).toEqual([]);
     expect(findByHmac(b.h.db(), randomBytes(32))).toBeNull();
-  }, 180_000);
+
+    // La resolución es un parámetro más (nota 209): mismas entradas y mismas opciones pero a 360 px
+    // NO es una fusión idéntica (vídeo nuevo, de 360 px de alto); repetirla a 360 px sí lo es.
+    const same = {
+      leftId: ids.Izquierdo as string,
+      rightId: ids['Derecho rotado'] as string,
+      audio: 'mix',
+      duration: 'longest',
+    } as const;
+    const at360 = await b.service.start(req({ ...same, resolution: 360, name: 'A 360' })).done;
+    expect(at360?.ok, JSON.stringify(at360)).toBe(true);
+    const id360 = (at360 as { ok: true; data: { mediaId: string; existed: boolean } }).data;
+    expect(id360.existed).toBe(false);
+    expect(id360.mediaId).not.toBe(data.mediaId);
+    expect(b.commands.at(-1)?.args.join(' ')).toContain('scale=-2:360:flags=bicubic');
+    // 160×90 → 640 de ancho y 120×160 → 270 de ancho, los dos a 360 de alto.
+    expect(
+      b.h.db().prepare('SELECT width, height FROM media WHERE id = ?').get(id360.mediaId),
+    ).toEqual({ width: 910, height: 360 });
+    const again360 = await b.service.start(
+      req({ ...same, resolution: 360, name: 'A 360 otra vez' }),
+    ).done;
+    expect(again360).toEqual({ ok: true, data: { mediaId: id360.mediaId, existed: true } });
+    // Y a «Automática» sigue encontrando el primero, no el de 360.
+    const againAuto = await b.service.start(
+      req({ ...same, resolution: 'auto', name: 'Auto otra vez' }),
+    ).done;
+    expect(againAuto).toEqual({ ok: true, data: { mediaId: data.mediaId, existed: true } });
+    expect(vaultFiles(b.h.vaultDir).tmp).toEqual([]);
+  }, 300_000);
 
   it('Cancelar a mitad con ffmpeg real → CANCELLED, sin .part ni filas nuevas', async () => {
     const b = await bench({ ffmpeg: 'real' });

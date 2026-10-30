@@ -366,6 +366,39 @@ test.describe('reproductor', () => {
     await closeViewer();
   });
 
+  test('Inicio y Fin en la barra de progreso no la dejan atascada: ←/→ y el vídeo siguen moviéndola', async () => {
+    test.setTimeout(120_000);
+    await openVideo();
+    await pause(page);
+    const progress = page.getByRole('slider', { name: 'Progreso' });
+    const valueNow = async (): Promise<number> =>
+      Number(await progress.getAttribute('aria-valuenow'));
+    await progress.focus();
+
+    // Fin: la barra va al final; ← la retrocede 5 s (125 milésimas de 40 s).
+    await page.keyboard.press('End');
+    await expect.poll(() => timeOf(page), { timeout: 10_000 }).toBeGreaterThan(VIDEO_SECONDS - 1);
+    await expect.poll(valueNow).toBeGreaterThan(990);
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(() => timeOf(page), { timeout: 10_000 }).toBeLessThan(VIDEO_SECONDS - 4);
+    await expect.poll(valueNow, { timeout: 10_000 }).toBeLessThan(900);
+    await expect.poll(valueNow, { timeout: 10_000 }).toBeGreaterThan(800);
+
+    // Inicio: la barra va a 0; → la avanza 5 s.
+    await page.keyboard.press('Home');
+    await expect.poll(() => timeOf(page), { timeout: 10_000 }).toBeLessThan(0.5);
+    await expect.poll(valueNow).toBeLessThan(15);
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => timeOf(page), { timeout: 10_000 }).toBeGreaterThan(4);
+    await expect.poll(valueNow, { timeout: 10_000 }).toBeGreaterThan(100);
+    await expect.poll(valueNow, { timeout: 10_000 }).toBeLessThan(160);
+
+    // Y la barra sigue a la posición del vídeo cuando éste se mueve por otra vía (L = +10 s).
+    await page.keyboard.press('l');
+    await expect.poll(valueNow, { timeout: 10_000 }).toBeGreaterThan(340);
+    await closeViewer();
+  });
+
   test('velocidad 0,25× y 2× con el tono conservado, también con Mayús+, y Mayús+.; se recuerda en la sesión', async () => {
     await openVideo();
     await pause(page);

@@ -64,6 +64,7 @@ test("D18: durante la fusión __galeriaAutoLockReasons contiene 'job' y al termi
     rightId,
     audio: 'left',
     duration: 'shortest',
+    resolution: 'auto',
     name: 'Fusión D18',
   });
   expect(start.ok, JSON.stringify(start)).toBe(true);
@@ -75,6 +76,7 @@ test("D18: durante la fusión __galeriaAutoLockReasons contiene 'job' y al termi
     rightId: leftId,
     audio: 'none',
     duration: 'shortest',
+    resolution: 'auto',
     name: 'Otra',
   });
   expect(second).toEqual({ ok: false, error: { code: 'BUSY' } });
@@ -95,6 +97,7 @@ test('suspend a mitad de la fusión: bloqueo inmediato, claves a cero, sin .part
     rightId,
     audio: 'mix',
     duration: 'longest',
+    resolution: 'auto',
     name: 'Fusión interrumpida',
   });
   expect(start.ok, JSON.stringify(start)).toBe(true);

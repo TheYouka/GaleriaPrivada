@@ -4,7 +4,10 @@
 import { useDocumentHidden } from '../lib/use-media';
 import { useThemeStore } from '../stores/theme-store';
 import { isBackgroundPaused } from './background-paused';
+import { GradientBackground } from './backgrounds/GradientBackground';
 import { MicaBackground } from './backgrounds/MicaBackground';
+import { SolidBackground } from './backgrounds/SolidBackground';
+import { WallpaperBackground } from './backgrounds/WallpaperBackground';
 import { WavesBackground } from './backgrounds/WavesBackground';
 import type { BackgroundKind } from './theme-types';
 
@@ -39,8 +42,13 @@ export function BackgroundHost({
     >
       {kind === 'waves' ? (
         <WavesBackground paused={paused} reducedMotion={reducedMotion} />
+      ) : kind === 'solid' ? (
+        <SolidBackground />
+      ) : kind === 'wallpaper' ? (
+        <WallpaperBackground />
+      ) : kind === 'gradient' ? (
+        <GradientBackground />
       ) : (
-        // F1: `mica`; los fondos `solid`, `wallpaper` y `paper` llegan en F6.
         <MicaBackground />
       )}
     </div>

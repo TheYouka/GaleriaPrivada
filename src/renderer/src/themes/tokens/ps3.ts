@@ -1,6 +1,7 @@
-// Tema "Ondas" (`ps3`, docs/DESIGN.md §15.2), stub de F1: solo oscuro, Nunito (OFL), texto y acento
-// blancos sobre el azul de las ondas. F6 lo completa (color del mes, brillo por hora). Colores
-// propios; sin recursos de Sony.
+// Tema "Ondas" (`ps3`, docs/DESIGN.md §15.2): solo oscuro, Nunito (OFL), texto y acento blancos sobre
+// el azul de las ondas. Tokens completos desde F6 (6.1); el fondo cambia de color con el mes y de
+// brillo con la hora (6.3), y sus `bgExtremes` cubren los 12 colores. Colores propios; sin recursos
+// de Sony.
 import { wavesExtremes, WAVES_PALETTE } from '../backgrounds/waves';
 import {
   motionTokens,
@@ -87,5 +88,5 @@ export const PS3_TOKENS: Readonly<Record<'dark', ThemeTokens>> = {
   dark: { ...DARK, ...SHARED },
 };
 
-/** Las ondas pintan entre el azul de arriba y el de abajo con las tres cintas solapadas. */
+/** Las ondas pintan entre el color más oscuro y el más claro de los 12 meses y todas las horas. */
 export const PS3_BG_EXTREMES = { dark: wavesExtremes() } as const;

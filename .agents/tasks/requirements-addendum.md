@@ -229,3 +229,25 @@ The user asked to replace the analog-photo-album theme. They first asked for a c
 - **Selection bar and checkboxes:** the selection bar with its count appears as soon as one item is selected. Checkboxes are visible on all tiles while something is selected, and on hover or focus otherwise.
 - **Leaving selection:** Esc, "Cancelar selección", or deselecting the last item.
 - **Scope:** the same rules apply wherever tiles are selectable, including the playlist detail. Drag-to-reorder handles keep working.
+
+## 10. User decisions after Phase 5 (binding)
+
+The user decided the first point. For the rest, the user delegated the decision to the orchestrator ("las demás decisiones tómalas tú"). These decisions are the orchestrator's:
+
+- **Merge output resolution is SELECTABLE (user).** The merge dialog offers "Automática (recomendada)", which is today's computed `H`, plus fixed output heights 360, 480, 720 and 1080 px.
+  - `H` stays even and ≤ 1080.
+  - Width follows from hstack of both inputs scaled to `H`.
+  - Options above the tallest input are allowed but labelled "(amplía la imagen)".
+  - The chosen resolution is part of the merge parameters. The identical-merge check (`existed: true`) only matches when the inputs AND the parameters, including the resolution, are the same.
+  - The default is Automática.
+- **`PlayerControls.tsx` (Phase 3) gets the same keyboard-scrub fix as the dual screen** (PLAN.md note 205): `scrub` is only stored during a pointer drag. Add a test.
+- **`PlaceholderScreen.tsx` is deleted if nothing imports it.**
+- **Horizontal next to vertical video in the dual screen:** no code change. It is left to the user's manual check.
+- **D9 is CONFIRMED.** The profile picker keeps the same structure, DOM order and keyboard behavior in every theme; only the presentation changes.
+- **D10 is CONFIRMED.** The visible theme names are neutral: Clásico (`fotos`), Mosaico (`xbox`), Ondas (`ps3`), Cristal (`macos`) and Cine (`cine`, which replaces `album`, see §8).
+- **Cine palette.** Use the §8 recommendation (#09090F to #151030, violet #7C5CFF, lavender #B7A6FF, white focus ring). Colors are not restricted, but logos, names and fonts are.
+- **Phase 6 visual verification.** Do NOT commit `toHaveScreenshot` reference images. They would add many MB to the public repo and are flaky across machines.
+  - Use reviewed screenshots under `tests/.tmp/screenshots/fase-6/` instead.
+  - Also run the keyboard-only functional walkthrough in all 5 themes and the automated contrast tests.
+- **CPU measurement.** The background CPU measurement cannot be done with DevTools in `npm run dev` by the agents. Measure it in an E2E test instead, with `app.getAppMetrics()` / `process.getCPUUsage()`: waves visible vs paused. Record the numbers.
+- **NVDA screen-reader check.** Optional manual check for the user. It does not block the phase.

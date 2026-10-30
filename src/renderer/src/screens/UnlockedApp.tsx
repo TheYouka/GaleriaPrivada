@@ -4,7 +4,7 @@
 // (session:activity, como mucho cada 10 s). Aquí se montan también lo que debe seguir visible en
 // cualquier pantalla: el panel de importación, la capa de soltar archivos, los diálogos de renombrar y
 // eliminar (también los de playlists), el visor de fotos y vídeos (§16.1) y el traslado de la bóveda.
-import { useEffect } from 'react';
+import { useEffect, type ComponentType } from 'react';
 import { installActivityReporter } from '../lib/activity';
 import { announce } from '../lib/announce';
 import { isCtrlKey, isTextInputTarget } from '../lib/keyboard';
@@ -22,9 +22,13 @@ import {
   subscribePlaylists,
 } from '../stores/playlists-store';
 import { lockSession } from '../stores/session-store';
-import { NAV_MODEL, type NavKey } from '../themes/shells/nav-model';
+import { NAV_MODEL, type NavKey, type ShellProps } from '../themes/shells/nav-model';
+import { PivotShell } from '../themes/shells/PivotShell';
 import { SidebarShell } from '../themes/shells/SidebarShell';
+import { TopbarShell } from '../themes/shells/TopbarShell';
+import { VibrancyShell } from '../themes/shells/VibrancyShell';
 import { XmbShell } from '../themes/shells/XmbShell';
+import type { ShellKind } from '../themes/theme-types';
 import { useTheme } from '../themes/use-theme';
 import { CommandBar, GALLERY_SEARCH_ID, IMPORT_BUSY_TOOLTIP } from './gallery/CommandBar';
 import { DeleteDialog } from './gallery/DeleteDialog';
@@ -43,6 +47,15 @@ import { PresentationSetupDialog } from './presentation/PresentationSetupDialog'
 import { Viewer } from './viewer/Viewer';
 import { RelocateDialog } from './settings/RelocateDialog';
 import { SettingsScreen } from './settings/SettingsScreen';
+
+/** El shell de cada tema: mismo NavModel, mismas pantallas y mismos ShellProps (§15.5). */
+const SHELLS: Record<ShellKind, ComponentType<ShellProps>> = {
+  sidebar: SidebarShell,
+  pivot: PivotShell,
+  xmb: XmbShell,
+  vibrancy: VibrancyShell,
+  topbar: TopbarShell,
+};
 
 function Screen({ active }: { active: NavKey }) {
   switch (active) {
@@ -157,6 +170,7 @@ export function UnlockedApp() {
     if (key === 'playlists') closePlaylist();
     useNavStore.getState().navigate(key);
   };
+  const Shell = SHELLS[def.shell];
   const screen = <Screen active={active} />;
   const commandBar =
     galleryKindOf(active) === null ? null : (
@@ -166,15 +180,9 @@ export function UnlockedApp() {
     );
   return (
     <>
-      {def.shell === 'xmb' ? (
-        <XmbShell nav={NAV_MODEL} active={active} onNavigate={navigate} commandBar={commandBar}>
-          {screen}
-        </XmbShell>
-      ) : (
-        <SidebarShell nav={NAV_MODEL} active={active} onNavigate={navigate} commandBar={commandBar}>
-          {screen}
-        </SidebarShell>
-      )}
+      <Shell nav={NAV_MODEL} active={active} onNavigate={navigate} commandBar={commandBar}>
+        {screen}
+      </Shell>
       <ImportProgress />
       <ImportDropZone />
       <RenameDialog />

@@ -28,7 +28,8 @@
 // sentencia, no se toca objects/ ni thumbs/ y no se envía merge:done (la ventana se sustituye).
 import { createHash, randomBytes } from 'node:crypto';
 import { AppErrorException, type AppError } from '@shared/errors';
-import type { Id, MergeDone, MergeProgress, MergeRequest } from '@shared/types';
+import { MERGE_RESOLUTIONS } from '@shared/constants';
+import type { Id, MergeDone, MergeProgress, MergeRequest, MergeResolution } from '@shared/types';
 import { KIND_MEDIA, KIND_THUMB, type ObjectKind } from '../crypto/file-format';
 import { openObject, type ObjectReader } from '../crypto/object-reader';
 import type { ObjectWriter, ObjectWriterResult } from '../crypto/object-writer';
@@ -118,8 +119,12 @@ export function scaledWidth(width: number, height: number, target: number): numb
 }
 
 export interface MergeParams {
-  /** `H`, par y ≤ 1080. */
+  /** Altura de salida: `H` de «Automática» o la elegida (360, 480, 720 o 1080); par y ≤ 1080. */
   height: number;
+  /** `H` de §18.2 (la altura «Automática»), aunque se haya elegido otra. */
+  autoHeight: number;
+  /** La resolución pedida. */
+  resolution: MergeResolution;
   /** `FPS` con 3 decimales. */
   fps: number;
   /** `D` en segundos con 3 decimales. */
@@ -148,11 +153,15 @@ export interface MergeParams {
  * `none` sea cual sea la opción.
  */
 export function mergeParams(
-  req: Pick<MergeRequest, 'leftId' | 'rightId' | 'audio' | 'duration'>,
+  req: Pick<MergeRequest, 'leftId' | 'rightId' | 'audio' | 'duration' | 'resolution'>,
   left: MergeSourceRow | null,
   right: MergeSourceRow | null,
 ): MergeParams {
   if (req.leftId === req.rightId) throw invalid('same-video');
+  // Lista cerrada (nota 209): defensa en profundidad tras el esquema zod.
+  if (!(MERGE_RESOLUTIONS as readonly unknown[]).includes(req.resolution)) {
+    throw invalid('resolution');
+  }
   if (!left || !right || left.id !== req.leftId || right.id !== req.rightId) {
     throw invalid('not-ready');
   }
@@ -169,8 +178,9 @@ export function mergeParams(
   ) {
     throw invalid('metadata');
   }
-  const height = mergeHeight(left.height, right.height);
-  if (height < 2) throw invalid('metadata');
+  const autoHeight = mergeHeight(left.height, right.height);
+  if (autoHeight < 2) throw invalid('metadata');
+  const height = req.resolution === 'auto' ? autoHeight : req.resolution;
 
   let audio: MergeAudioGraph;
   if (!left.hasAudio && !right.hasAudio) audio = 'none';
@@ -198,6 +208,8 @@ export function mergeParams(
   ] as const;
   return {
     height,
+    autoHeight,
+    resolution: req.resolution,
     fps,
     durationS,
     durationMs: Math.round(durationS * 1000),
@@ -218,7 +230,8 @@ export function mergeCommandFor(
   return mergeCommand({
     left: { kind: 'loopback', url: urls.left, demuxer: params.demuxers[0] },
     right: { kind: 'loopback', url: urls.right, demuxer: params.demuxers[1] },
-    height: params.height,
+    height: params.autoHeight,
+    resolution: params.resolution,
     fps: params.fps,
     durationS: params.durationS,
     deltaS: params.deltaS,

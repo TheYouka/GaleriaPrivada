@@ -2,8 +2,8 @@
 // "Entrar" y "Cancelar". Enter envía; mientras se calcula Argon2, "Comprobando…" con aria-busy (y no
 // se puede cerrar: el resultado llegaría con el diálogo cerrado). Con VAULT_UNAVAILABLE, la ruta,
 // "Reintentar" y "Buscar la bóveda…" (vault:locate, §8.7). No hay ningún enlace para recuperar la
-// contraseña.
-import { useRef, useState, type FormEvent, type RefObject } from 'react';
+// contraseña. En Cristal (selector `login`) el mismo formulario va en línea bajo el avatar (InlineUnlock).
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { motion } from 'motion/react';
 import type { AppError } from '@shared/errors';
 import type { ProfileSummary } from '@shared/types';
@@ -25,7 +25,7 @@ export interface UnlockDialogProps {
   onReturnFocus(): void;
 }
 
-function UnlockForm({
+export function UnlockForm({
   profile,
   inputRef,
   busy,
@@ -159,6 +159,44 @@ function UnlockForm({
   );
 }
 
+/**
+ * Desbloqueo en línea bajo el avatar elegido (selector `login` de Cristal, §14.3 / §15.10). Es el
+ * mismo formulario del diálogo (envío, errores, «Comprobando…», «Buscar la bóveda…»), sin modal: el
+ * foco va a la contraseña, Esc cierra (salvo mientras se comprueba) y las teclas no llegan a la lista
+ * de perfiles, así que ←/→/Inicio/Fin editan el texto en vez de mover el foco.
+ */
+export function InlineUnlock({ profile, onClose }: { profile: ProfileSummary; onClose(): void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  return (
+    // El contenedor solo intercepta el teclado de sus hijos (campo y botones, que son los controles).
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      role="group"
+      aria-label={`Contraseña de ${profile.name}`}
+      className="g-unlock-inline mt-2 w-full text-left"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape' && !busy) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <UnlockForm
+        profile={profile}
+        inputRef={inputRef}
+        busy={busy}
+        setBusy={setBusy}
+        onCancel={onClose}
+      />
+    </div>
+  );
+}
+
 export function UnlockDialog({ profile, onClose, onReturnFocus }: UnlockDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -171,7 +209,7 @@ export function UnlockDialog({ profile, onClose, onReturnFocus }: UnlockDialogPr
       busy={busy}
       title={profile?.name ?? ''}
       description="Escribe la contraseña para abrir tu bóveda."
-      className="w-[min(26rem,calc(100vw-2rem))] text-center"
+      className="g-unlock w-[min(26rem,calc(100vw-2rem))] text-center"
       onOpenAutoFocus={(e) => {
         e.preventDefault();
         inputRef.current?.focus();

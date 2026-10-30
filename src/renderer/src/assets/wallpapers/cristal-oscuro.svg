@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <!-- Fondo propio del tema Cristal: todos los colores quedan entre #0E1322 y #2A2457. -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E1322"/>
+      <stop offset="1" stop-color="#2A2457"/>
+    </linearGradient>
+    <radialGradient id="glow-a" cx="0.2" cy="0.15" r="0.6">
+      <stop offset="0" stop-color="#1A1B3D" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#1A1B3D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-b" cx="0.85" cy="0.95" r="0.7">
+      <stop offset="0" stop-color="#2A2457" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#2A2457" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#base)"/>
+  <rect width="1600" height="1000" fill="url(#glow-a)"/>
+  <rect width="1600" height="1000" fill="url(#glow-b)"/>
+  <path d="M0 640 C 300 520 560 760 860 660 S 1380 520 1600 600 L1600 1000 L0 1000 Z" fill="#1A1B3D" fill-opacity="0.45"/>
+  <path d="M0 780 C 340 700 640 880 960 790 S 1400 700 1600 760 L1600 1000 L0 1000 Z" fill="#2A2457" fill-opacity="0.5"/>
+</svg>

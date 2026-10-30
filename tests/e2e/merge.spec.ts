@@ -197,6 +197,7 @@ test.describe('fusión de vídeos', () => {
       rightId,
       audio: 'mix',
       duration: 'longest',
+      resolution: 'auto',
       name: 'Fusión por el preload',
     });
     expect(started.ok).toBe(true);
@@ -214,6 +215,59 @@ test.describe('fusión de vídeos', () => {
     const done = await waitMergeDone(page, started.data.jobId, 180_000);
     expect(done.result?.ok).toBe(true);
     await expect.poll(videoCount, { timeout: 30_000 }).toBe(BASE_VIDEOS + 2);
+  });
+
+  test('elegir 360 px: el vídeo nuevo mide 360 de alto; repetir a 360 px es idéntico', async () => {
+    test.setTimeout(360_000);
+    await nav(page).getByRole('button', { name: 'Vídeo dual', exact: true }).first().click();
+    await expect(dualScreen(page)).toBeVisible();
+    await waitVideosReady(page);
+    await openMergeDialog();
+    let d = dialog();
+    // Por defecto «Automática (recomendada)»; las alturas por encima del más alto (180) amplían.
+    await expect(d.getByRole('radio', { name: 'Automática (recomendada)' })).toBeChecked();
+    for (const name of [
+      '360 px (amplía la imagen)',
+      '480 px (amplía la imagen)',
+      '720 px (amplía la imagen)',
+      '1080 px (amplía la imagen)',
+    ]) {
+      await expect(d.getByRole('radio', { name })).not.toBeChecked();
+    }
+    await expect(d.locator('[data-merge-size]')).toHaveAttribute('data-merge-size', '560 × 180');
+    await d.getByRole('radio', { name: '360 px (amplía la imagen)' }).click();
+    // 320×180 y 240×180 escalados a 360 de alto: 640 + 480.
+    await expect(d.locator('[data-merge-size]')).toHaveAttribute('data-merge-size', '1120 × 360');
+    await d.getByLabel('Nombre').fill('Fusión E2E 360');
+    await d.getByRole('button', { name: 'Crear vídeo fusionado' }).click();
+    await expect(d.locator('[data-merge-result]')).toHaveText('Vídeo fusionado creado', {
+      timeout: 240_000,
+    });
+    await d.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(d).toBeHidden();
+    expect(await videoCount()).toBe(BASE_VIDEOS + 3);
+
+    // El vídeo de la galería mide 360 de alto (y 1120 de ancho).
+    const id360 = await mediaIdByName(page, 'Fusión E2E 360');
+    const playback = await playAndSeek(page, id360);
+    expect(playback.height).toBe(360);
+    expect(playback.width).toBe(1120);
+    expect(playback.advanced).toBe(true);
+
+    // Repetir a 360 px: idéntico (la resolución es parte de los parámetros).
+    await nav(page).getByRole('button', { name: 'Vídeo dual', exact: true }).first().click();
+    await expect(dualScreen(page)).toBeVisible();
+    await openMergeDialog();
+    d = dialog();
+    await d.getByRole('radio', { name: '360 px (amplía la imagen)' }).click();
+    await d.getByLabel('Nombre').fill('Fusión E2E 360 otra vez');
+    await d.getByRole('button', { name: 'Crear vídeo fusionado' }).click();
+    await expect(d.locator('[data-merge-result]')).toHaveText('Ya existía un vídeo idéntico', {
+      timeout: 240_000,
+    });
+    await d.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(d).toBeHidden();
+    expect(await videoCount()).toBe(BASE_VIDEOS + 3);
   });
 
   test('«Cancelar fusión» no deja ningún vídeo ni `.part`', async () => {
@@ -236,7 +290,7 @@ test.describe('fusión de vídeos', () => {
     await expect.poll(() => partsIn(launched.dataDir, profileId), { timeout: 30_000 }).toEqual([]);
     await d.getByRole('button', { name: 'Cancelar' }).click();
     await expect(d).toBeHidden();
-    expect(await videoCount()).toBe(BASE_VIDEOS + 2);
+    expect(await videoCount()).toBe(BASE_VIDEOS + 3);
     await expect.poll(() => autoLockReasons(launched.app)).not.toContain('job');
   });
 
@@ -285,7 +339,7 @@ test.describe('fusión de vídeos', () => {
     await expect.poll(() => partsIn(launched.dataDir, profileId), { timeout: 30_000 }).toEqual([]);
 
     await unlockProfile(page, PROFILE, PASSWORD);
-    expect(await videoCount()).toBe(BASE_VIDEOS + 2);
+    expect(await videoCount()).toBe(BASE_VIDEOS + 3);
     expect(partsIn(launched.dataDir, profileId)).toEqual([]);
   });
 

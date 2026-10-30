@@ -1,6 +1,9 @@
 /*
  * Fuentes empaquetadas (docs/DESIGN.md §15.12): solo @fontsource-variable (OFL-1.1), servidas desde
- * app://bundle, sin CDN. F1: Inter (Clásico) y Nunito (Ondas); F6 añade Noto Sans, Fraunces y Caveat.
+ * app://bundle, sin CDN. Inter (Clásico y Cristal), Nunito (Ondas), Noto Sans (Mosaico) y Plus
+ * Jakarta Sans (Cine). Sin fuentes de Microsoft, Sony, Apple ni de ningún servicio.
  */
 @import '@fontsource-variable/inter/wght.css';
 @import '@fontsource-variable/nunito/wght.css';
+@import '@fontsource-variable/noto-sans/wght.css';
+@import '@fontsource-variable/plus-jakarta-sans/wght.css';

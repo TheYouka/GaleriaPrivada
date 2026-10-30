@@ -1,6 +1,8 @@
 /*
  * Estilos estructurales propios de cada tema (docs/DESIGN.md §15.4). F1: `fotos` (y lo mínimo del
- * stub de `ps3`); F6 añade el resto con selectores [data-theme="…"].
+ * stub de `ps3`); F6 añade el resto. Las reglas de movimiento (escalado del foco, deslizamientos,
+ * fundidos de la barra) se apagan con `html[data-reduced-motion='true']` (§15.11): queda el anillo
+ * de foco y los indicadores estáticos.
  */
 
 /* Mica: degradado radial estático del acento al 15 % (los extremos del test de contraste). */
@@ -42,4 +44,393 @@ html[data-presentation-mode='windowed'] [data-titlebar] {
 /* Ondas: el panel de contenido deja ver las ondas; el texto va sobre `surface-alpha`. */
 [data-theme='ps3'] [data-titlebar] {
   color: var(--g-text);
+}
+
+/* ---- Mosaico (xbox): pestañas del shell pivot (6.2) ---- */
+
+/* Foco muy visible: escala (token del tema, 1,06) + borde de 3 px. Sin movimiento queda el borde. */
+.g-pivot-tab,
+.g-pivot-item {
+  transition: transform var(--g-dur-fast) var(--g-ease-standard);
+}
+.g-pivot-tab[data-selected='true'] {
+  box-shadow: inset 0 -4px 0 var(--g-accent);
+}
+.g-pivot-tab:focus-visible,
+.g-pivot-item:focus-visible {
+  outline: 3px solid var(--g-focus-ring);
+  outline-offset: 2px;
+  transform: scale(var(--g-focus-scale));
+}
+html[data-reduced-motion='true'] .g-pivot-tab,
+html[data-reduced-motion='true'] .g-pivot-item {
+  transition: none;
+}
+html[data-reduced-motion='true'] .g-pivot-tab:focus-visible,
+html[data-reduced-motion='true'] .g-pivot-item:focus-visible {
+  transform: none;
+}
+
+/* ---- Ondas (ps3): categorías del shell xmb (6.2) ---- */
+
+.g-xmb-category {
+  position: relative;
+}
+/* La categoría actual lleva siempre una barra bajo el nombre, con o sin movimiento. */
+.g-xmb-category[data-selected='true']::after {
+  content: '';
+  position: absolute;
+  right: 22%;
+  bottom: 0;
+  left: 22%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--g-text);
+}
+.g-xmb-icon {
+  transition: transform var(--g-dur-normal) var(--g-ease-standard);
+}
+.g-xmb-category[data-selected='true'] .g-xmb-icon {
+  transform: scale(var(--g-focus-scale));
+}
+html[data-reduced-motion='true'] .g-xmb-icon {
+  transition: none;
+}
+html[data-reduced-motion='true'] .g-xmb-category[data-selected='true'] .g-xmb-icon {
+  transform: none;
+}
+
+/* ---- Cristal (macos): barra lateral y de herramientas translúcidas (6.2) ---- */
+
+/* Las únicas superficies con backdrop-filter del tema (§15.7). */
+.g-vibrancy-sidebar,
+.g-vibrancy-toolbar {
+  background: var(--g-surface-alpha);
+  -webkit-backdrop-filter: blur(var(--g-blur-surface)) saturate(var(--g-saturate-surface));
+  backdrop-filter: blur(var(--g-blur-surface)) saturate(var(--g-saturate-surface));
+}
+.g-vibrancy-sidebar {
+  border-right: var(--g-border-width) solid var(--g-border);
+}
+.g-vibrancy-toolbar {
+  border-bottom: var(--g-border-width) solid var(--g-border);
+}
+
+/* Semáforo de la barra de título: los iconos aparecen con el ratón encima o el foco de teclado. */
+.g-traffic-icon {
+  opacity: 0;
+  transition: opacity var(--g-dur-fast) var(--g-ease-standard);
+}
+.g-traffic-lights:hover .g-traffic-icon,
+.g-traffic-lights:has(:focus-visible) .g-traffic-icon {
+  opacity: 1;
+}
+html[data-reduced-motion='true'] .g-traffic-icon {
+  transition: none;
+}
+
+/* ---- Cine: barra superior del shell topbar y barra de título (6.2) ---- */
+
+/* Transparente sobre el degradado; sólida (con sombra) en cuanto el contenido se desplaza. */
+.g-topbar {
+  background-color: transparent;
+  transition:
+    background-color var(--g-dur-normal) var(--g-ease-standard),
+    box-shadow var(--g-dur-normal) var(--g-ease-standard);
+}
+.g-topbar[data-scrolled='true'] {
+  background-color: var(--g-bg);
+  box-shadow: var(--g-shadow-md);
+}
+html[data-reduced-motion='true'] .g-topbar {
+  transition: none;
+}
+/* Sección actual: barra de lavanda (el color de acento para texto y bordes de Cine). */
+.g-topbar-link[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  left: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--g-selection-border);
+}
+.g-cine-button {
+  height: 28px;
+  margin-block: 2px;
+  border-radius: 8px;
+}
+
+/* ---- Mosaico: barra de título mínima ---- */
+
+[data-titlebar='xbox'] {
+  border-bottom: var(--g-border-width) solid var(--g-border);
+}
+
+/* ================= Estilos estructurales de 6.4 (mosaicos, playlists, barra de selección) ================= */
+
+/*
+ * Barra de selección de la galería (nota 193): siempre una fila. Si el ancho de la barra no basta para
+ * los textos, los botones pasan a solo icono (el texto sigue en el DOM para el nombre accesible y
+ * `title` da la etiqueta con el ratón). Con el filtro de playlist hay un botón más.
+ */
+.g-selbar {
+  container-type: inline-size;
+}
+@container (max-width: 54rem) {
+  .g-selbar .g-selbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+}
+@container (min-width: 54.0625rem) and (max-width: 64rem) {
+  .g-selbar[data-extra='true'] .g-selbar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+}
+
+/*
+ * Mosaicos de la galería (`.g-tile`, GalleryGrid) y tarjetas de Playlists (`.g-pl-*`): solo CSS, el DOM
+ * es el mismo. El escalado del foco solo se dibuja con el teclado (:focus-visible), así que el ratón no
+ * mueve las tarjetas bajo el puntero y el clic siempre acierta. Con movimiento reducido no hay escalado:
+ * queda el anillo.
+ */
+.g-tile,
+.g-pl-btn {
+  transition:
+    transform var(--g-dur-normal) var(--g-ease-standard),
+    box-shadow var(--g-dur-normal) var(--g-ease-standard);
+}
+/* La fila (o la tarjeta) con el foco pasa por encima de las vecinas: el escalado no queda tapado. */
+[role='row']:has(> .g-tile:focus-visible),
+.g-pl-card:has(.g-pl-btn:focus-visible) {
+  z-index: 2;
+}
+html[data-reduced-motion='true'] .g-tile,
+html[data-reduced-motion='true'] .g-pl-btn {
+  transition: none;
+}
+html[data-reduced-motion='true'] .g-tile:focus-visible,
+html[data-reduced-motion='true'] .g-pl-btn:focus-visible {
+  transform: none !important;
+}
+
+/* ---- Mosaico (xbox): `flat` ---- */
+
+[data-theme='xbox'] .g-tile {
+  border-radius: 0;
+}
+[data-theme='xbox'] .g-tile:hover {
+  outline: 2px solid var(--g-border-strong);
+  outline-offset: -2px;
+}
+[data-theme='xbox'] .g-tile:focus-visible,
+[data-theme='xbox'] .g-pl-btn:focus-visible {
+  outline: 3px solid var(--g-focus-ring);
+  outline-offset: 2px;
+  transform: scale(var(--g-focus-scale));
+}
+/* Playlists: cuadrícula de mosaicos planos de 1×1, 2×1 y 2×2 unidades (10 rem), con el nombre sobre una etiqueta sólida. */
+[data-theme='xbox'] .g-pl-grid {
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  grid-auto-rows: 10rem;
+  grid-auto-flow: dense;
+  gap: var(--g-tile-gap);
+}
+[data-theme='xbox'] .g-pl-card {
+  height: 100%;
+}
+[data-theme='xbox'] .g-pl-card:nth-child(6n + 1) {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+[data-theme='xbox'] .g-pl-card:nth-child(6n + 4) {
+  grid-column: span 2;
+}
+[data-theme='xbox'] .g-pl-btn {
+  position: relative;
+  height: 100%;
+  border-radius: 0;
+}
+[data-theme='xbox'] .g-pl-cover {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+}
+[data-theme='xbox'] .g-pl-info {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: var(--g-surface);
+}
+
+/* ---- Ondas (ps3): `xmb` (mosaicos con halo; Playlists como lista) ---- */
+
+[data-theme='ps3'] .g-tile {
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.2);
+}
+[data-theme='ps3'] .g-tile:hover {
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.65);
+}
+[data-theme='ps3'] .g-tile:focus-visible,
+[data-theme='ps3'] .g-pl-btn:focus-visible {
+  outline: 3px solid var(--g-focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 28px rgb(255 255 255 / 0.4);
+}
+[data-theme='ps3'] .g-pl-grid {
+  grid-template-columns: minmax(0, 42rem);
+  gap: 6px;
+}
+[data-theme='ps3'] .g-pl-btn {
+  flex-direction: row;
+  align-items: center;
+  border-radius: var(--g-radius-md);
+}
+[data-theme='ps3'] .g-pl-cover {
+  width: 7.5rem;
+  flex: none;
+}
+[data-theme='ps3'] .g-pl-info {
+  min-width: 0;
+  flex: 1;
+}
+
+/* ---- Cristal (macos): `vibrancy` (tarjetas con borde fino y sombra, sin más backdrop-filter) ---- */
+
+[data-theme='macos'] .g-tile,
+[data-theme='macos'] .g-pl-btn {
+  box-shadow: var(--g-shadow-sm);
+}
+[data-theme='macos'] .g-tile {
+  outline: 1px solid var(--g-border);
+  outline-offset: -1px;
+}
+[data-theme='macos'] .g-tile:hover,
+[data-theme='macos'] .g-pl-btn:hover {
+  box-shadow: var(--g-shadow-md);
+}
+[data-theme='macos'] .g-tile:focus-visible,
+[data-theme='macos'] .g-pl-btn:focus-visible {
+  outline: 3px solid var(--g-focus-ring);
+  outline-offset: 2px;
+}
+[data-theme='macos'] .g-pl-grid {
+  gap: 20px;
+}
+
+/* ---- Cine (cine): `poster` ---- */
+
+[data-theme='cine'] .g-tile {
+  box-shadow: var(--g-shadow-md);
+}
+/* Degradado inferior (siempre) y etiqueta con el nombre sobre fondo sólido (con ratón, foco o selección). */
+[data-theme='cine'] .g-tile::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  background: linear-gradient(to top, rgb(9 9 15 / 0.85), transparent);
+  pointer-events: none;
+}
+[data-theme='cine'] .g-tile::after {
+  content: attr(data-name);
+  position: absolute;
+  inset: auto 0 0 0;
+  overflow: hidden;
+  padding: 6px 10px;
+  background: var(--g-surface);
+  color: var(--g-text);
+  font-size: var(--g-text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+  transition:
+    opacity var(--g-dur-fast) var(--g-ease-standard),
+    transform var(--g-dur-fast) var(--g-ease-standard);
+}
+[data-theme='cine'] .g-tile:is(:hover, :focus-visible, [aria-selected='true'])::after {
+  opacity: 1;
+  transform: none;
+}
+[data-theme='cine'] .g-tile:is(:hover, :focus-visible, [aria-selected='true']) .g-tile-badge {
+  bottom: 2.4rem;
+}
+html[data-reduced-motion='true'] [data-theme='cine'] .g-tile::after,
+html[data-reduced-motion='true'][data-theme='cine'] .g-tile::after {
+  transition: none;
+  transform: none;
+}
+[data-theme='cine'] .g-tile:hover {
+  outline: 2px solid rgb(255 255 255 / 0.55);
+  outline-offset: -2px;
+}
+[data-theme='cine'] .g-tile:focus-visible,
+[data-theme='cine'] .g-pl-btn:focus-visible {
+  outline: 3px solid var(--g-focus-ring);
+  outline-offset: 3px;
+  transform: scale(var(--g-focus-scale));
+}
+[data-theme='cine'] .g-pl-grid {
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 20px;
+}
+[data-theme='cine'] .g-pl-btn {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-color: transparent;
+  box-shadow: var(--g-shadow-md);
+}
+[data-theme='cine'] .g-pl-cover {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+}
+[data-theme='cine'] .g-pl-cover::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 55%;
+  background: linear-gradient(to top, rgb(9 9 15 / 0.9), transparent);
+}
+[data-theme='cine'] .g-pl-info {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: var(--g-surface);
+}
+
+/* ---- Selector de perfiles por tema (6.4, D9) ---- */
+
+/* Diálogo de desbloqueo: tarjeta redondeada con el avatar encima; en Cristal, avatar circular y campos más amplios. */
+[data-theme='macos'] .g-unlock {
+  border-radius: var(--g-radius-lg);
+  box-shadow: var(--g-shadow-lg);
+}
+[data-theme='cine'] .g-unlock {
+  border-radius: var(--g-radius-lg);
+  box-shadow: var(--g-shadow-lg);
+}
+[data-theme='xbox'] .g-unlock {
+  border: 3px solid var(--g-focus-ring);
+}
+
+/* Cristal: la contraseña va en línea bajo el avatar elegido (selector `login`), en una tarjeta translúcida. */
+[data-theme='macos'] .g-unlock-inline {
+  padding: 0 1rem 1rem;
+  border: 1px solid var(--g-border);
+  border-radius: var(--g-radius-lg);
+  background: var(--g-surface);
+  box-shadow: var(--g-shadow-lg);
 }

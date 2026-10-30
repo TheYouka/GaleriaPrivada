@@ -484,7 +484,7 @@ export function PlaylistDetail({ id }: { id: string }) {
         </Button>
       </div>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex min-w-[14rem] flex-1 items-baseline gap-3">
+        <div className="flex basis-full items-baseline gap-3">
           <ScreenHeading className="min-w-0 truncate text-2xl text-text">
             {playlist.name}
           </ScreenHeading>

@@ -3,7 +3,7 @@
 // usa ThemeProvider (adoptedStyleSheets) y tests/unit/renderer/build-css.test.ts. Los selectores no
 // llevan `:root`, así que también valen dentro de un contenedor (ThemePreview).
 import type { ColorScheme } from '@shared/themes';
-import { THEMES } from './registry';
+import { ALL_THEMES } from './registry';
 import { TOKEN_NAMES, type ThemeDefinition, type ThemeTokens } from './theme-types';
 
 /** Un valor nunca puede cerrar la declaración ni la regla. */
@@ -27,8 +27,8 @@ export function buildThemeRule(id: string, scheme: ColorScheme, tokens: ThemeTok
   return `${themeSelector(id, scheme)} {\n${lines.join('\n')}\n}`;
 }
 
-/** Todas las reglas de los temas dados (por defecto, los implementados). */
-export function buildThemeCss(themes: readonly ThemeDefinition[] = THEMES): string {
+/** Todas las reglas de los temas dados (por defecto, los 5: así ya están al activar uno nuevo). */
+export function buildThemeCss(themes: readonly ThemeDefinition[] = ALL_THEMES): string {
   const rules: string[] = [];
   for (const def of themes) {
     for (const scheme of def.schemes) {

@@ -2,7 +2,9 @@
 // portada, el nombre y el número de elementos; "Nueva playlist"; y un menú por tarjeta con Abrir,
 // Presentación, Renombrar y Eliminar (con confirmación; borra la playlist, no los medios). Al abrir
 // una playlist se muestra su detalle (PlaylistDetail) en esta misma pantalla. Solo usa tokens del
-// tema (superficies, bordes y radio de mosaico): en Clásico y en Ondas es la misma estructura.
+// tema (superficies, bordes y radio de mosaico) y las clases `g-pl-*` de styles/themes.css (6.4): la
+// estructura y el teclado son los mismos en los 5 temas; Mosaico la ve como mosaicos 2×2/2×1/1×1,
+// Ondas como lista, Cristal como tarjetas con sombra y Cine como pósters.
 import { Ellipsis, ListVideo, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import type { PlaylistSummary } from '@shared/types';
@@ -29,14 +31,14 @@ const MENU_ITEM =
 
 function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
   return (
-    <li className="group relative">
+    <li className="g-pl-card group relative">
       <button
         type="button"
         onClick={() => openPlaylist(playlist.id)}
         aria-label={`${playlist.name}, ${plural(playlist.itemCount, 'elemento', 'elementos')}`}
-        className="flex w-full flex-col overflow-hidden rounded-tile border border-border-strong bg-surface-alpha text-left text-text transition-colors hover:bg-surface-hover"
+        className="g-pl-btn flex w-full flex-col overflow-hidden rounded-tile border border-border-strong bg-surface-alpha text-left text-text transition-colors hover:bg-surface-hover"
       >
-        <span className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-tile-placeholder">
+        <span className="g-pl-cover relative flex aspect-video w-full items-center justify-center overflow-hidden bg-tile-placeholder">
           {playlist.coverMediaId ? (
             <img
               src={thumbUrl(playlist.coverMediaId, playlist.updatedAt)}
@@ -48,7 +50,7 @@ function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
             <ListVideo aria-hidden="true" size={36} strokeWidth={1.5} className="text-text-muted" />
           )}
         </span>
-        <span className="flex flex-col gap-0.5 px-3 py-2 pr-11">
+        <span className="g-pl-info flex flex-col gap-0.5 px-3 py-2 pr-11">
           <span className="truncate text-base font-semibold">{playlist.name}</span>
           <span className="text-sm text-text-muted">
             {plural(playlist.itemCount, 'elemento', 'elementos')}
@@ -61,7 +63,7 @@ function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
             type="button"
             aria-label={`Opciones de «${playlist.name}»`}
             title="Opciones"
-            className="absolute right-1.5 bottom-1.5 inline-flex size-9 items-center justify-center rounded-md text-text hover:bg-surface-hover"
+            className="g-pl-opts absolute right-1.5 bottom-1.5 inline-flex size-9 items-center justify-center rounded-md text-text hover:bg-surface-hover"
           >
             <Ellipsis aria-hidden="true" size={18} />
           </button>
@@ -143,7 +145,7 @@ function PlaylistList() {
       ) : (
         <ul
           aria-label="Playlists"
-          className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-4"
+          className="g-pl-grid grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-4"
         >
           {playlists.map((p) => (
             <PlaylistCard key={p.id} playlist={p} />

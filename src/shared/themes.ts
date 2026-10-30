@@ -5,7 +5,7 @@
 //
 // D10: los nombres visibles son neutros; los ids internos solo aparecen en el código.
 
-export const THEME_IDS = ['fotos', 'xbox', 'ps3', 'macos', 'album'] as const;
+export const THEME_IDS = ['fotos', 'xbox', 'ps3', 'macos', 'cine'] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
@@ -21,18 +21,18 @@ export interface ThemeCatalogEntry {
   /** Esquemas admitidos; el primero es el predeterminado (§15.1, §15.4). */
   schemes: readonly ColorScheme[];
   /**
-   * El tema está implementado en esta versión. F1: `fotos` completo y el stub de `ps3` (§15.13);
-   * F6 completa el resto.
+   * El tema está implementado en esta versión (el selector y main solo ofrecen y aceptan estos).
+   * F6 (6.2) activa los cinco, con sus shells, barras de título y fondos.
    */
   available: boolean;
 }
 
 export const THEME_CATALOG: readonly ThemeCatalogEntry[] = Object.freeze([
   { id: 'fotos', displayName: 'Clásico', schemes: ['light', 'dark'], available: true },
-  { id: 'xbox', displayName: 'Mosaico', schemes: ['dark'], available: false },
+  { id: 'xbox', displayName: 'Mosaico', schemes: ['dark'], available: true },
   { id: 'ps3', displayName: 'Ondas', schemes: ['dark'], available: true },
-  { id: 'macos', displayName: 'Cristal', schemes: ['light', 'dark'], available: false },
-  { id: 'album', displayName: 'Álbum', schemes: ['light'], available: false },
+  { id: 'macos', displayName: 'Cristal', schemes: ['light', 'dark'], available: true },
+  { id: 'cine', displayName: 'Cine', schemes: ['dark'], available: true },
 ] satisfies ThemeCatalogEntry[]);
 
 const BY_ID: ReadonlyMap<ThemeId, ThemeCatalogEntry> = new Map(THEME_CATALOG.map((t) => [t.id, t]));

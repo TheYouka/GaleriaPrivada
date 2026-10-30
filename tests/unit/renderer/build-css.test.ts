@@ -1,7 +1,8 @@
 // build-css.ts: una regla por tema y esquema admitido, con todos los tokens --g-* de §15.3.
 import { describe, expect, it } from 'vitest';
 import { buildThemeCss, buildThemeRule, themeSelector } from '@renderer/themes/build-css';
-import { getThemeDefinition, resolveTheme, THEMES } from '@renderer/themes/registry';
+import { THEME_IDS, AVAILABLE_THEME_IDS } from '@shared/themes';
+import { ALL_THEMES, getThemeDefinition, resolveTheme, THEMES } from '@renderer/themes/registry';
 import { TOKEN_NAMES, type ThemeDefinition } from '@renderer/themes/theme-types';
 
 function rulesOf(css: string): { selector: string; body: string }[] {
@@ -15,11 +16,15 @@ describe('buildThemeCss', () => {
   const rules = rulesOf(css);
 
   it('genera una regla por tema y esquema admitido, y nada más', () => {
-    const expected = THEMES.flatMap((t) => t.schemes.map((s) => themeSelector(t.id, s)));
+    const expected = ALL_THEMES.flatMap((t) => t.schemes.map((s) => themeSelector(t.id, s)));
     expect(expected).toEqual([
       '[data-theme="fotos"][data-scheme="light"]',
       '[data-theme="fotos"][data-scheme="dark"]',
+      '[data-theme="xbox"][data-scheme="dark"]',
       '[data-theme="ps3"][data-scheme="dark"]',
+      '[data-theme="macos"][data-scheme="light"]',
+      '[data-theme="macos"][data-scheme="dark"]',
+      '[data-theme="cine"][data-scheme="dark"]',
     ]);
     expect(rules.map((r) => r.selector)).toEqual(expected);
     expect(css.match(/\{/g)?.length).toBe(expected.length);
@@ -38,6 +43,8 @@ describe('buildThemeCss', () => {
     expect(css).toContain('--g-accent: #005FB8;');
     expect(css).toContain('--g-accent: #60CDFF;');
     expect(css).toContain("--g-font-sans: 'Nunito Variable', sans-serif;");
+    expect(css).toContain("--g-font-sans: 'Noto Sans Variable', sans-serif;");
+    expect(css).toContain("--g-font-sans: 'Plus Jakarta Sans Variable', sans-serif;");
     expect(css).not.toMatch(/Segoe|SF Pro|San Francisco|Helvetica/);
   });
 
@@ -99,14 +106,17 @@ describe('resolveTheme (§15.4, §15.9, §15.10)', () => {
     expect(resolveTheme(input).schemePref).toBe('system');
   });
 
-  it('un tema no implementado usa el predeterminado', () => {
-    expect(getThemeDefinition('album').id).toBe('fotos');
-    expect(
-      resolveTheme({
-        ...base,
-        scope: 'picker',
-        global: { pickerThemeId: 'xbox', colorScheme: 'dark' },
-      }).def.id,
-    ).toBe('fotos');
+  it('un tema no disponible en esta versión usa el predeterminado', () => {
+    expect(THEMES.map((t) => t.id)).toEqual([...AVAILABLE_THEME_IDS]);
+    for (const id of THEME_IDS.filter((i) => !AVAILABLE_THEME_IDS.includes(i))) {
+      expect(getThemeDefinition(id).id).toBe('fotos');
+      expect(
+        resolveTheme({
+          ...base,
+          scope: 'picker',
+          global: { pickerThemeId: id, colorScheme: 'dark' },
+        }).def.id,
+      ).toBe('fotos');
+    }
   });
 });

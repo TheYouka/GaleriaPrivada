@@ -67,6 +67,11 @@ test('Ajustes: Clásico → Ondas en vivo, sin recargar, en la misma pantalla y 
   // Con el teclado: foco en la tarjeta marcada y → (la pulsación dura 100 ms, como una real: Radix
   // marca la opción al moverse el foco mientras la flecha está pulsada).
   await classic.focus();
+  // Las tarjetas van en el orden del catálogo: Clásico, Mosaico y Ondas (dos pasos).
+  await page.keyboard.press('ArrowRight', { delay: 100 });
+  await expect(html(page)).toHaveAttribute('data-theme', 'xbox');
+  // El cambio de shell vuelve a montar la pantalla: se espera a que el foco vuelva a la tarjeta antes de la siguiente flecha.
+  await expect(page.getByRole('radio', { name: 'Mosaico' })).toBeFocused();
   await page.keyboard.press('ArrowRight', { delay: 100 });
   await expect(html(page)).toHaveAttribute('data-theme', 'ps3');
   await expect(html(page)).toHaveAttribute('data-scheme', 'dark');
@@ -83,8 +88,12 @@ test('Ajustes: Clásico → Ondas en vivo, sin recargar, en la misma pantalla y 
 
   // Y de vuelta, también en vivo.
   await page.keyboard.press('ArrowLeft', { delay: 100 });
+  await expect(page.getByRole('radio', { name: 'Mosaico' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft', { delay: 100 });
   await expect(html(page)).toHaveAttribute('data-theme', 'fotos');
   await expect(classic).toBeFocused();
+  await page.keyboard.press('ArrowRight', { delay: 100 });
+  await expect(page.getByRole('radio', { name: 'Mosaico' })).toBeFocused();
   await page.keyboard.press('ArrowRight', { delay: 100 });
   await expect(html(page)).toHaveAttribute('data-theme', 'ps3');
   await expect.poll(() => settingsJson().pickerThemeId).toBe('ps3');

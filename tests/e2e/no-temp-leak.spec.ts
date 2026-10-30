@@ -93,6 +93,7 @@ test('fusionar dos vídeos (ffmpeg con entradas por loopback y salida por pipe:1
     rightId: await mediaIdByName(page, 'Temp derecho'),
     audio: 'mix',
     duration: 'longest',
+    resolution: 'auto',
     name: 'Fusión sin temporales',
   });
   expect(expectMerged(outcome).existed).toBe(false);

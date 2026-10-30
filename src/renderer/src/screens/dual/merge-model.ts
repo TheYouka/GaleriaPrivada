@@ -2,7 +2,8 @@
 // resolución de salida (solo informativa: `H` lo calcula main, PLAN.md nota 197 f) y los mensajes en
 // español de cada error. Sin DOM, para probarlos en Vitest.
 import type { AppError } from '@shared/errors';
-import type { MergeRequest } from '@shared/types';
+import { MERGE_RESOLUTION_HEIGHTS } from '@shared/constants';
+import type { MergeRequest, MergeResolution } from '@shared/types';
 import { errorMessage } from '../../lib/errors-es';
 
 export type MergeAudio = MergeRequest['audio'];
@@ -69,21 +70,51 @@ export interface Dimensions {
   height: number;
 }
 
+/** Valor de cada opción de resolución del formulario ('auto' o la altura en texto). */
+export type MergeResolutionChoice = 'auto' | `${(typeof MERGE_RESOLUTION_HEIGHTS)[number]}`;
+
+export const MERGE_RESOLUTION_AUTO_LABEL = 'Automática (recomendada)';
+
+/** La petición de `merge:start` para una opción del formulario. */
+export function resolutionOfChoice(choice: MergeResolutionChoice): MergeResolution {
+  return choice === 'auto' ? 'auto' : (Number(choice) as MergeResolution);
+}
+
 /**
- * Resolución del vídeo fusionado: altura común `H = 2·floor(min(hL, hR, 1080)/2)` y cada lado escalado
- * a `H` con `scale=-2:H` (ancho par, redondeo al más cercano). Misma fórmula que `merge-service.ts`;
- * null si falta alguna dimensión.
+ * Opciones de resolución: «Automática (recomendada)» y 360, 480, 720 y 1080 px de alto. Las que
+ * superan la altura del vídeo más alto llevan «(amplía la imagen)».
+ */
+export function mergeResolutionOptions(
+  left: { height?: number | null } | null,
+  right: { height?: number | null } | null,
+): { value: MergeResolutionChoice; label: string }[] {
+  const tallest = Math.max(left?.height ?? 0, right?.height ?? 0);
+  return [
+    { value: 'auto', label: MERGE_RESOLUTION_AUTO_LABEL },
+    ...MERGE_RESOLUTION_HEIGHTS.map((h) => ({
+      value: String(h) as MergeResolutionChoice,
+      label: h > tallest ? `${h} px (amplía la imagen)` : `${h} px`,
+    })),
+  ];
+}
+
+/**
+ * Resolución del vídeo fusionado: con «Automática», altura común `H = 2·floor(min(hL, hR, 1080)/2)`;
+ * con una fija, esa altura. Cada lado se escala a `H` con `scale=-2:H` (ancho par, redondeo al más
+ * cercano). Misma fórmula que `merge-service.ts`; null si falta alguna dimensión.
  */
 export function mergeOutputSize(
   left: { width?: number | null; height?: number | null } | null,
   right: { width?: number | null; height?: number | null } | null,
+  resolution: MergeResolution = 'auto',
 ): Dimensions | null {
   const lw = left?.width;
   const lh = left?.height;
   const rw = right?.width;
   const rh = right?.height;
   if (!lw || !lh || !rw || !rh || lw <= 0 || lh <= 0 || rw <= 0 || rh <= 0) return null;
-  const height = 2 * Math.floor(Math.min(lh, rh, MERGE_MAX_HEIGHT) / 2);
+  const height =
+    resolution === 'auto' ? 2 * Math.floor(Math.min(lh, rh, MERGE_MAX_HEIGHT) / 2) : resolution;
   if (height < 2) return null;
   const scaled = (w: number, h: number): number => Math.floor((height * w + h) / (2 * h)) * 2;
   return { width: scaled(lw, lh) + scaled(rw, rh), height };
@@ -107,6 +138,7 @@ const VALIDATION_REASONS: Readonly<Record<string, string>> = Object.freeze({
   'not-video': 'Solo se pueden fusionar vídeos.',
   audio: 'El lado elegido no tiene audio. Elige otra opción de audio.',
   mime: 'Alguno de los vídeos tiene un formato que no se puede fusionar.',
+  resolution: 'La resolución elegida no es válida. Elige otra.',
   metadata:
     'Faltan datos de alguno de los vídeos (tamaño o duración), así que no se puede fusionar.',
 });

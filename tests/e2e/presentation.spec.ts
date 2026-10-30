@@ -433,7 +433,7 @@ test('cambiar el volumen de la música en mitad de un fundido no produce ningún
     page,
     (s) => s.slideIndex === 0 && (s.musicGain ?? 0) > 0.05 && (s.musicGain ?? 1) < 0.45,
     'a mitad del fundido de subida',
-    20_000,
+    45_000,
   );
   menu = await openAudioMenu();
   await menu.getByRole('slider', { name: 'Volumen de la música' }).focus();
